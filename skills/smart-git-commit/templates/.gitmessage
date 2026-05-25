@@ -1,17 +1,21 @@
-# <type>(<scope>): <imperative summary — max 72 chars>
-# |<---- Try to keep to 50 chars ------>|
-#
-# CONTEXT: <what state was the code in BEFORE this change>
-#
-# CHANGE:  <exactly what was done>
-#
-# WHY:     <the reason — business or technical motivation>
-#
-# IMPACT:  <what this enables or unblocks, or "No breaking changes">
-#
-# <footer>
-# Closes #N
-# Fixes #N
-# Refs #N
-# BREAKING CHANGE: <description>
-# Co-authored-by: Name <email>
+# <type>(<scope>): <imperative summary — 72 chars max, no period>
+# Types: feat fix perf security refactor test docs chore hotfix revert
+# Scopes: auth api payments ui db cli core config deps
+
+# CONTEXT: What state existed BEFORE this change? (past tense)
+CONTEXT: 
+
+# CHANGE: What exactly was done? (present tense, specific)
+CHANGE:  
+
+# WHY: Business or technical reason not obvious from the code?
+WHY:     
+
+# IMPACT: What does this enable or unblock? Any breaking changes?
+IMPACT:  
+
+# Footers (delete unused lines):
+# Closes #
+# Fixes #
+# Refs #
+# BREAKING CHANGE:
