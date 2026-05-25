@@ -1,3 +1,5 @@
+
+[![Smart Git Commit](https://img.shields.io/badge/commits-Smart%20Git%20Commit-6C47FF?style=flat-square)](https://github.com/Zarl-prog/Smart-git-commit)
 # Smart Git Commit
 
 <p align="center">
