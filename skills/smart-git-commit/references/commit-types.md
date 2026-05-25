@@ -5,107 +5,116 @@
 ```
 <type>(<scope>): <imperative summary — max 72 chars>
 
-CONTEXT: <what state the code was in BEFORE this change>
-CHANGE:  <exactly what was done>
-WHY:     <the reason — business or technical motivation>
+CONTEXT: <past tense — what existed before>
+CHANGE:  <present tense — exactly what was done>
+WHY:     <the non-obvious reason>
 IMPACT:  <what this enables or unblocks>
 
 <footer>
 ```
 
-## Types
+---
 
-| Type | Description | Releases | Example |
-|------|-------------|----------|---------|
-| `feat` | A new feature | Minor | `feat(auth): add OAuth2 login with Google` |
-| `fix` | A bug fix | Patch | `fix(api): handle null response on timeout` |
-| `refactor` | Code change with no behavior change | — | `refactor(payments): extract validator class` |
-| `test` | Adding or updating tests | — | `test(cart): add empty cart checkout cases` |
-| `docs` | Documentation only | — | `docs(api): document webhook payload format` |
-| `chore` | Config, deps, tooling, CI | — | `chore(deps): upgrade axios to 1.6.2` |
-| `perf` | Performance improvement | Patch | `perf(db): add composite index on user_id` |
-| `security` | Security fix | Patch | `security(api): add rate limiting to login` |
-| `style` | Formatting, whitespace (no logic change) | — | `style(core): reformat with prettier` |
-| `ci` | CI/CD configuration changes | — | `ci: add GitHub Actions deploy workflow` |
-| `build` | Build system changes | — | `build: switch from webpack to vite` |
-| `revert` | Reverts a previous commit | — | `revert: restore removed endpoint from #123` |
-| `release` | Version bump / release | — | `release: bump version to v1.2.0` |
-| `hotfix` | Urgent production fix | Patch | `hotfix(api): restore removed pagination param` |
-| `deps` | Dependency updates | — | `deps: upgrade react to 18.3.0` |
-| `migration` | Database or data migration | — | `migration: add email_verified column to users` |
+## Types Reference
 
-## Scopes (Examples)
+| Type | Emoji | When to Use | Bad Example | Good Example |
+|------|-------|-------------|-------------|--------------|
+| `feat` | ✨ | New feature for the user or API | `feat: stuff` | `feat(auth): add OAuth2 login with Google` |
+| `fix` | 🐛 | Bug fix (production or development) | `fix: fixed it` | `fix(api): handle null response on timeout` |
+| `perf` | ⚡ | Performance improvement | `perf: faster now` | `perf(db): add composite index on org_id` |
+| `security` | 🔐 | Security vulnerability fix | `security: patched` | `security(api): add rate limiting to login` |
+| `refactor` | ♻️ | Code change with no behavior change | `refactor: cleaned up` | `refactor(payments): extract validator class` |
+| `test` | 🧪 | Adding or updating tests | `test: more tests` | `test(cart): add empty cart checkout cases` |
+| `docs` | 📚 | Documentation only | `docs: updated` | `docs(api): document webhook payload format` |
+| `chore` | 🔧 | Config, deps, tooling, CI | `chore: stuff` | `chore(deps): upgrade axios to 1.7.2` |
+| `hotfix` | 🚑 | Urgent production fix | `hotfix: fixed` | `hotfix(api): restore removed pagination param` |
+| `revert` | ⏪ | Reverts a previous commit | `revert: revert` | `revert: restore removed endpoint from a3b2c1d` |
+| `release` | 🏷️ | Version bump / release tagging | `release: bump` | `release: bump version to v2.1.0` |
+| `deps` | 📦 | Dependency updates only | `deps: upgrade` | `deps: upgrade react to 18.3.0` |
+| `migration` | 🗃️ | Database schema or data migration | `migration: add column` | `migration: add email_verified column to users` |
+| `style` | 🎨 | Formatting, whitespace (no logic change) | `style: format` | `style(core): reformat with prettier` |
+| `ci` | 👷 | CI/CD configuration changes | `ci: pipeline` | `ci: add GitHub Actions deploy workflow` |
+| `build` | 🏗️ | Build system changes | `build: config` | `build: switch from webpack to vite` |
 
-| Scope | When to Use |
-|-------|-------------|
-| `(api)` | API endpoints, controllers, routes |
-| `(auth)` | Authentication, authorization, sessions |
-| `(db)` | Database schemas, migrations, queries |
-| `(ui)` | Frontend components, styles, pages |
-| `(payments)` | Payment processing, billing, invoices |
-| `(deps)` | Dependency updates |
-| `(infra)` | Infrastructure, deployment, CI/CD |
-| `(cli)` | Command-line interface tools |
-| `(core)` | Core logic, shared utilities |
-| `(config)` | Configuration files, env vars |
+---
 
-## Subject Line Rules
+## Scope Guidance
 
-- **Imperative mood**: "add" not "added", "fix" not "fixing"
-- **No period** at the end
-- **Under 72 characters**
-- **Lowercase** after the colon
+| Good Scope | Bad Scope |
+|------------|-----------|
+| `(auth)` — specific module | `(src)` — too broad |
+| `(payments)` — domain boundary | `(utils)` — dumping ground |
+| `(api)` — API layer | `(fix)` — it's a type, not a scope |
+| `(db)` — data layer | `(changes)` — meaningless |
+| `(deps)` — dependencies | `(stuff)` — unprofessional |
 
-✅ `feat(api): add pagination to user list`
-❌ `feat(api): Added pagination to user list.`
+**Rule of thumb**: The scope should be the directory or module name that contains
+most of the changed files. If it spans 3+ modules, omit the scope.
+
+---
+
+## Summary Line Rules
+
+| Rule | ✅ Good | ❌ Bad |
+|------|---------|--------|
+| Imperative mood | `add pagination` | `added pagination` / `adding pagination` |
+| No period | `fix timeout` | `fix timeout.` |
+| Under 72 chars | `feat(api): add pagination to user list` (38 chars) | `feat(api): add pagination support to the user list endpoint with cursor-based navigation` (97 chars) |
+| Lowercase after colon | `feat: add` | `feat: Add` |
+
+---
 
 ## Breaking Changes
 
+Two ways to mark a breaking change:
+
 ```
+# Method 1: ! before colon (shorter, preferred)
 feat(api)!: redesign user profile endpoint
 
-CONTEXT: /user/profile returned full objects even when callers only needed IDs.
-CHANGE:  Replaces /user/profile with /users/{id}/profile returning only requested fields.
-WHY:     Reduced payload size by 60% on list views; aligns with REST conventions.
-IMPACT:  All clients must update their endpoint URLs. Old endpoint redirects for 90 days.
+BREAKING CHANGE: /user/profile deprecated. Use /users/{id}/profile.
 
-BREAKING CHANGE: /user/profile is deprecated. Use /users/{id}/profile.
+# Method 2: BREAKING CHANGE footer (more explicit)
+feat(api): redesign user profile endpoint
+
+BREAKING CHANGE: /user/profile deprecated. Use /users/{id}/profile.
 ```
 
-Two ways to mark:
-1. `!` before the colon: `feat(api)!: ...`
-2. `BREAKING CHANGE:` in the footer
+Breaking changes trigger a **MAJOR** version bump (1.0.0 → 2.0.0).
 
-## Footers
+---
+
+## Footers Reference
 
 | Footer | Usage |
 |--------|-------|
-| `Closes #N` | Fully resolves an issue |
-| `Fixes #N` | Same as Closes, for bugs specifically |
+| `Closes #N` | Fully resolves an issue (auto-closes on merge) |
+| `Fixes #N` | Bug-specific auto-close (same as Closes) |
 | `Refs #N` | Related but doesn't close |
 | `Part of #N` | One commit in a larger effort |
-| `Jira: PROJ-123` | Jira ticket reference (no auto-close) |
-| `Linear: PROJ-123` | Linear issue reference |
 | `BREAKING CHANGE:` | Breaking change description |
 | `Co-authored-by:` | Pair programming credit |
 | `Reviewed-by:` | Code review credit |
+
+---
 
 ## Decision Tree
 
 ```
 What type of change is this?
-├─ New feature?           → feat
-├─ Bug fix?               → fix
-├─ Security vulnerability?→ security (not fix)
-├─ Performance?           → perf
-├─ Code restructure?      → refactor
-├─ Tests?                 → test
-├─ Documentation?         → docs
-├─ Config / Deps / CI?    → chore
-├─ Urgent production fix? → hotfix
-├─ Database migration?    → migration
-├─ Dependency update?     → deps
-├─ Reverting?             → revert
-├─ Breaking change?       → add ! or BREAKING CHANGE footer
-└─ Version release?       → release
+├─ New feature?                    → feat
+├─ Bug fix?                        → fix
+├─ Security vulnerability?         → security
+├─ Performance improvement?        → perf
+├─ Code restructure (no behavior)? → refactor
+├─ Tests only?                     → test
+├─ Documentation only?             → docs
+├─ Config / Deps / CI / Tooling?   → chore
+├─ Urgent production fix?          → hotfix
+├─ Database migration?             → migration
+├─ Dependency update?              → deps
+├─ Reverting a previous commit?    → revert
+├─ Version release?                → release
+├─ Breaking change?                → add ! or BREAKING CHANGE footer
+└─ Unsure?                         → refactor (safe default)
 ```

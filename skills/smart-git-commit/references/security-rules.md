@@ -1,101 +1,164 @@
-# Security Scan Rules
+# Security Rules — Secret Detection & Fix Guide
 
-## What to Scan For
+## 12 Secret Pattern Families
 
-### High-Priority Patterns (Block Commit — Exit Code 1)
+| # | Family | Regex Pattern | Example |
+|---|--------|--------------|---------|
+| 1 | AWS Access Key ID | `A` + ``KIA[0-9A-Z]{16}` | `A` + ``KIAIOSFODNN7EXAMPLE` |
+| 2 | AWS Secret Access Key | `(?i)aws_secret_access_key\s*=\s*\S+` | `aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` |
+| 3 | GitHub Tokens | `g` + ``h[pousr]_[A-Za-z0-9]{36}` | `g` + ``hp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` |
+| 4 | Stripe Keys | `s` + ``k_(live|test)_[A-Za-z0-9]{24,}` | `s` + ``k_live_xxxxxxxxxxxxxxxxxxxxxxxx` |
+| 5 | Generic API Key | `[Aa][Pp][Ii]_?[Kk][Ee][Yy]\s*[:=]\s*\S{16,}` | `API_KEY = sk-xxxxxxxxxxxxxxxx` |
+| 6 | Passwords | `[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]\s*[:=]\s*\S{8,}` | `PASSWORD = superSecret123!` |
+| 7 | Private Keys | `-----BEGIN (RSA\|EC\|OPENSSH\|DSA\|PGP) PRIVATE KEY-----` | `-----BEGIN RSA PRIVATE KEY-----` |
+| 8 | Bearer Tokens | `[Bb]earer\s+[A-Za-z0-9\-_]{20,}` | `Bearer eyJhbGciOiJIUzI1NiIs...` |
+| 9 | MongoDB Connection | `mongodb://[^:]+:[^@]+@` | `mongodb://admin:password@cluster0.mongodb.net` |
+| 10 | PostgreSQL Connection | `postgresql://[^:]+:[^@]+@` | `postgresql://user:pass@localhost:5432/db` |
+| 11 | MySQL Connection | `mysql://[^:]+:[^@]+@` | `mysql://user:pass@localhost:3306/db` |
+| 12 | .env / Credential Files | `\.env$`, `\.pem$`, `\.key$`, `credentials` | `.env.production`, `server.key`, `credentials.json` |
 
-| Pattern | Example | Risk |
-|---------|---------|------|
-| API keys | `API_KEY=sk-...`, `api_key = "..."` | Unauthorized API access |
-| Secret keys | `SECRET_KEY=b3e8...` | Credential exposure |
-| Passwords | `password=admin123`, `PASSWORD="..."` | Account compromise |
-| Tokens | `token=ghp_...`, `TOKEN=eyJ...` | Auth bypass |
-| Private keys | `-----BEGIN RSA PRIVATE KEY-----` | Crypto key leak |
-| Bearer tokens | `Authorization: Bearer eyJ...` | Session hijacking |
-| AWS access keys | `AKIA...` (e.g., `AKIA[0-9A-Z]{16}`) | Cloud resource theft |
-| Database URLs | `postgresql://user:pass@host/db` | Data breach |
-| Connection strings | `Server=;Database=;User Id=;Password=;` | DB access leak |
-| Stripe live keys | `s` + `k_live_...`, `p` + `k_live_...` | Payment fraud |
-| GitHub tokens | `ghp_xxxxxxxxxxxx`, `gho_xxxxxxxxxxxx` | Repo access |
-| Redis URLs with pass | `redis://:password@host:6379` | Cache access |
+---
 
-### Medium-Priority Patterns (Warn Only — Exit Code 0)
+## What to Do When a Secret Is Found
 
-| Pattern | Context Needed |
-|---------|---------------|
-| `.env` file staged | Probably contains secrets |
-| `.pem` / `.key` file staged | Private key check needed |
-| `credentials` file staged | Credential file check needed |
-| `secrets` in filename | Manual review required |
-| Hardcoded IPs / URLs | Check for internal infrastructure leak |
-| Files > 1MB staged | Potential credential dumps |
-
-## How to Scan
+### If the secret is STAGED but NOT pushed:
 
 ```bash
-# Quick scan of staged changes (build pattern safely)
-SCAN_PATTERN="(api_key|secret|password|token|private_key|bearer|stripe|aws_key)"
-git diff --cached | grep -inE "$SCAN_PATTERN" | head -30
+# 1. Unstage the file
+git reset HEAD config/credentials.yml
 
-# Check for credential files accidentally staged
-git diff --cached --name-only | grep -iE "\.env|\.pem|\.key|credentials|secrets" | head -10
+# 2. Replace the secret with an environment variable
+# config/credentials.yml → config/credentials.yml.example (committed)
+# Actual values go in .env (gitignored)
 
-# Full diff scan with expanded patterns
-SCAN_FULL="(ghp_|gho_|stripe_live|aws_secret|connection_string)"
-git diff --cached | grep -inE "$SCAN_FULL" | head -20
+# 3. Add to .gitignore if needed
+echo "config/credentials.yml" >> .gitignore
+
+# 4. Add the safe version
+git add config/credentials.yml.example .gitignore
+
+# 5. Commit the fix
+git commit -m "chore(config): externalize credentials to env vars"
 ```
 
-## What to Do When Found
+### If the secret was PUSHED (even to a branch):
 
-### 1. **STOP** — Do not stage or commit
 ```bash
-# Remove the file from staging
-git reset HEAD <file>
+# 1. ROTATE the credential immediately
+#    - AWS: go to IAM → delete access key → create new one
+#    - GitHub: go to Settings → Developer settings → revoke token
+#    - Stripe: go to Dashboard → API keys → roll secret key
+
+# 2. Remove from git history using git-filter-repo
+#    Install: pip install git-filter-repo  or  brew install git-filter-repo
+
+# 3. Force push the cleaned history
+#    git push origin --force --all
 ```
 
-### 2. **Remove the secret from the file**
-- Replace with environment variable: `process.env.API_KEY`
-- Or use a placeholder: `YOUR_API_KEY_HERE`
-- Or add to `.env.example` (not `.env`)
+---
 
-### 3. **Add file to `.gitignore` if applicable**
+## Scrubbing Secrets from Git History
+
+Use `git-filter-repo` (NOT `git filter-branch` — it's deprecated and slow):
+
 ```bash
-echo ".env" >> .gitignore
+# Remove a specific file from all of history
+git filter-repo --path config/credentials.yml --invert-paths
+
+# Replace a string pattern in all of history
+git filter-repo --replace-text <(echo "AKIAI``OSFODNN7EXAMPLE==>REPLACED")
+
+# After cleaning, force push
+git push origin --force --all
+git push origin --force --tags
+```
+
+**⚠️ Warning**: Force pushing rewrites shared history. Coordinate with your team.
+Everyone must re-clone after a force push.
+
+---
+
+## False Positive Guidance
+
+These are NOT secrets — they're test fixtures, example values, or placeholders:
+
+| Pattern | When It's Safe | How to Allow |
+|---------|---------------|--------------|
+| `A` + ``KIA...` | Example AWS key in documentation | Use prefix check — only flag strings with proper format AND length |
+| `s` + ``k_test_...` | Stripe test key (starts with s` + ``k_test) | Flag `s` + ``k_live_` only, allow `s` + ``k_test_` |
+| `password` in `password_hash` | Not a plaintext password | Skip lines containing `hash`, `bcrypt`, `argon` |
+| `Bearer` in `Authorization: Bearer` header | Test client code | Skip test files if context is mock/example |
+| `.env.example` | Template file, no real values | Skip files with `.example` suffix |
+| `id_rsa.pub` | Public key (suffix is .pub) | Only flag private keys (no .pub suffix) |
+| `0xDEADBEEF` | Hex constant, not a secret | Check length: must be 16+ chars for API key pattern |
+
+---
+
+## Environment Variable Best Practices
+
+### Node.js
+```bash
+# .env (gitignored) — real values
+DATABASE_URL=postgresql://user:realpassword@localhost:5432/db
+STRIPE_KEY=<your-stripe-secret-key>
+
+# .env.example (committed) — template with placeholders
+DATABASE_URL=postgresql://user:password@localhost:5432/db
+STRIPE_KEY=<your-stripe-secret-key>
+
+# Access in code
+const stripeKey = process.env.STRIPE_KEY;
+if (!stripeKey) throw new Error("Missing STRIPE_KEY");
+```
+
+### Python
+```python
+# settings.py
+import os
+DATABASE_URL = os.environ["DATABASE_URL"]
+STRIPE_KEY = os.environ.get("STRIPE_KEY")
+```
+
+### Go
+```go
+// config.go
+import "os"
+var DatabaseURL = os.Getenv("DATABASE_URL")
+var StripeKey = os.Getenv("STRIPE_KEY")
+```
+
+### Rust
+```rust
+// config.rs
+use std::env;
+let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+let stripe_key = env::var("STRIPE_KEY").expect("STRIPE_KEY must be set");
+```
+
+---
+
+## Dangerous File Patterns
+
+Never commit these file types — they almost always contain credentials:
+
+```
+*.pem           # SSL/TLS certificates (private keys)
+*.key           # SSH private keys
+*.p12           # PKCS#12 certificate store
+*.keystore      # Java keystore
+*.cert          # Certificate files
+id_rsa          # SSH private key
+id_dsa          # SSH private key (legacy)
+.env            # Environment variables
+.env.*          # Environment-specific variables
+credentials     # Any file named "credentials"
+secrets         # Any file named "secrets"
+```
+
+Add them to `.gitignore`:
+```bash
 echo "*.pem" >> .gitignore
-```
-
-### 4. **Rotate the exposed secret**
-- If committed/pushed even once, the secret is compromised
-- Generate a new key/token immediately
-- Revoke the old one in the provider dashboard
-
-### 5. **Inform the user**
-- Which file and line contained the secret
-- What was done to fix it
-- Whether the secret needs rotation
-
-## Checklist Before Every Commit
-
-- [ ] No `api_key`, `secret`, `password`, `token` in staged diff
-- [ ] No `.env`, `.pem`, `.key`, `credentials` files staged
-- [ ] No AWS access keys (pattern: `AKIA...`) in any staged file
-- [ ] No database connection strings with credentials
-- [ ] No private keys (`BEGIN.*PRIVATE KEY`) in staged files
-- [ ] No hardcoded production secrets (URLs, IPs)
-- [ ] `.gitignore` covers secret file patterns
-
-## What NOT to Do
-
-- ❌ Don't `git add -A` without reviewing first
-- ❌ Don't assume a file is safe because it's code
-- ❌ Don't commit secrets to a private branch ("I'll delete it later")
-- ❌ Don't paste real tokens in commit messages or issue comments
-- ❌ Don't skip the scan on WIP/draft commits
-
-## Tools Reference
-
-Run `scripts/scan-secrets.sh` for an automated scan:
-```bash
-bash scripts/scan-secrets.sh
-# Output: CLEAN or list of suspicious lines
+echo "*.key" >> .gitignore
+echo "credentials" >> .gitignore
 ```

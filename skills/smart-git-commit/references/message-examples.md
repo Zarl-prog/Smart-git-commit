@@ -1,32 +1,25 @@
-# Gold-Standard Commit Message Examples
+# Commit Message Examples — 15 Gold-Standard Examples
 
-15 examples across all commit types, following the 5-part format:
-
-```
-<type>(<scope>): <imperative summary — max 72 chars>
-
-CONTEXT: <what state the code was in BEFORE this change>
-CHANGE:  <exactly what was done>
-WHY:     <the reason — business or technical motivation>
-IMPACT:  <what this enables or unblocks>
-
-<footer>
-```
+Every example uses the 5-part format: CONTEXT / CHANGE / WHY / IMPACT / footers.
+These cover every commit type in the conventional commits specification.
 
 ---
 
 ## 1. feat — New Feature
 
 ```
-feat(auth): add Google OAuth2 login with PKCE flow
+feat(api): add pagination to user list endpoint
 
-CONTEXT: Only email/password login existed, causing 40% signup abandonment on mobile.
-CHANGE:  Implements OAuth2 PKCE flow with Google Identity Services SDK.
-WHY:     Users expect social login. PKCE is mandatory for mobile SPAs; auth code flow
-         was rejected due to client_secret storage concerns.
-IMPACT:  Enables one-tap login on Android/iOS. Reduces signup friction in Phase 2 rollout.
+CONTEXT: GET /api/users returned all users in a single response, causing
+         15s load times for orgs with 50k+ users.
+CHANGE:  Adds ?page=N&per_page=100 query params with Link header for
+         cursor-based pagination.
+WHY:     Stripe-style cursor pagination scales better than offset-based
+         for high-write tables; no page drift on insert.
+IMPACT:  Reduces P95 response time from 15s to 120ms for large orgs.
+         Backward compatible — missing params default to full list.
 
-Closes #178
+Closes #204
 ```
 
 ---
@@ -36,30 +29,33 @@ Closes #178
 ```
 fix(payments): prevent double-charge on Stripe webhook retry
 
-CONTEXT: Stripe delivered webhooks twice under high load due to 30s application timeout,
-         causing duplicate charges.
-CHANGE:  Adds idempotency_key (order_id + unix_ts hash) to all Stripe charge requests.
-WHY:     Stripe's API natively deduplicates on idempotency keys — simpler than
-         Redis-based deduplication. Only new charge attempts are affected.
-IMPACT:  Eliminates billing support tickets for duplicate charges. No data migration needed.
+CONTEXT: Stripe delivered webhooks twice under high load due to 30s
+         application timeout, causing duplicate charges.
+CHANGE:  Adds idempotency_key (order_id + unix_ts hash) to all Stripe
+         charge requests before callout.
+WHY:     Stripe's API natively deduplicates on idempotency keys — simpler
+         than Redis-based deduplication. Only new charge attempts affected.
+IMPACT:  Eliminates billing support tickets for duplicate charges.
 
-Closes #301
+Fixes #301
 ```
 
 ---
 
-## 3. perf — Performance Improvement
+## 3. perf — Performance
 
 ```
-perf(dashboard): replace ORM queries with raw SQL for reports
+perf(db): add composite index on (org_id, created_at) for dashboard queries
 
-CONTEXT: Reports page generated N+1 queries (one per user row), causing 8-12s load times.
-CHANGE:  Rewrites the reports/summary endpoint with a single raw SQL JOIN query.
-WHY:     ORM abstraction prevented query optimization. Raw SQL is isolated to this one
-         endpoint — all other code still uses the ORM.
-IMPACT:  Reduces load time from 11.2s to 0.18s (62x improvement). Unblocks real-time dashboard feature.
+CONTEXT: Dashboard page loaded 18s because org-scoped date-range queries
+         were doing sequential scans on 12M-row audit_logs table.
+CHANGE:  Adds B-tree composite index on audit_logs(org_id, created_at).
+WHY:     All dashboard queries filter by org_id first, then sort by
+         created_at. Composite index covers both — no INCLUDE columns needed.
+IMPACT:  Dashboard P95 drops from 18s to 340ms. Index is 240MB — within
+         budget for the 8GB RAM instance.
 
-Refs #156
+Closes #156
 ```
 
 ---
@@ -67,49 +63,52 @@ Refs #156
 ## 4. security — Security Fix
 
 ```
-security(api): enforce rate limiting on /auth/login endpoint
+security(api): add rate limiting to login endpoint
 
-CONTEXT: Login endpoint had no rate limiting, allowing brute-force password attacks.
-CHANGE:  Adds express-rate-limit middleware: 5 attempts per 15 minutes per IP,
-         with exponential backoff on repeated violations. Adds account lockout
-         after 10 failed attempts (IP-independent).
-WHY:     SOC2 compliance requirement. Distributed brute-force via botnets was the
-         primary threat model — account lockout addresses this where IP limits alone fail.
-IMPACT:  Clients retrying rapidly now receive 429 Too Many Requests. Enables SOC2 audit pass in Phase 2.
-
-BREAKING CHANGE: Automated login scripts must handle 429 responses.
-Closes #233
+CONTEXT: POST /api/auth/login had no rate limiting, allowing unlimited
+         brute-force attempts — 12k requests/min in prod.
+CHANGE:  Adds token-bucket rate limiter: 5 attempts/min per IP, 10/min
+         per email. Returns 429 with Retry-After header on exceed.
+WHY:     OWASP ASVS v4.0 requires rate limiting on authentication
+         endpoints (V2.1.1). Previous attempts blocked by Redis dependency
+         — this uses in-memory sliding window, Redis optional.
+IMPACT:  Blocks brute-force at network edge. 429 response lets legitimate
+         users retry after cooldown. No breaking changes to API contract.
 ```
 
 ---
 
-## 5. refactor — Code Restructure (No Behavior Change)
+## 5. refactor — Code Restructure
 
 ```
-refactor(payments): extract validation logic into PaymentValidator class
+refactor(payments): extract PaymentValidator from PaymentProcessor
 
-CONTEXT: Payment handler was 340 lines with validation, business logic, and Stripe calls
-         all interleaved — impossible to unit test validation in isolation.
-CHANGE:  Extracts all input validation into a dedicated PaymentValidator class with
-         single-responsibility methods.
-WHY:     The current structure blocks adding Apple Pay support (next sprint). Validator
-         must be independently testable before introducing new payment methods.
-IMPACT:  Unblocks Apple Pay feature. All 47 existing tests pass unchanged.
+CONTEXT: PaymentProcessor class was 1,200 lines with mixed concerns:
+         validation, network calls, webhooks, and refund logic tangled.
+CHANGE:  Extracts PaymentValidator class with pure validation methods,
+         moves Stripe client to PaymentGateway, keeps orchestration in
+         PaymentProcessor.
+WHY:     PaymentProcessor had 3 separate reasons to change, violating SRP.
+         Unit tests needed heavy mocking — the validator is pure functions.
+IMPACT:  Code coverage on validation logic goes from 22% to 91%. New
+         PaymentGateway can swap providers without touching processor.
 ```
 
 ---
 
-## 6. test — Test Coverage
+## 6. test — Tests Only
 
 ```
-test(cart): add edge case coverage for empty cart checkout
+test(cart): add empty cart checkout and quantity overflow cases
 
-CONTEXT: Three edge cases from production bug #211 had zero test coverage: empty cart,
-         all-out-of-stock items, and expired coupons between add-to-cart and checkout.
-CHANGE:  Adds test cases for all three scenarios, mocking the cart service boundary.
-WHY:     These paths were exercised only in production. Automated coverage prevents
-         regression when the checkout flow is refactored next quarter.
-IMPACT:  No production code changed — tests confirm fixes from commit a3f9c12 hold under refactor.
+CONTEXT: Cart checkout had 68% line coverage — missing edge cases for
+         empty carts, max quantity, and concurrent add/remove.
+CHANGE:  Adds 14 test cases: empty cart 422, quantity > 999 error,
+         50 concurrent add operations, and mixed currency validation.
+WHY:     Empty cart edge case caused a P0 incident last sprint when users
+         could submit $0.00 orders. These tests prevent regression.
+IMPACT:  Cart checkout coverage goes from 68% to 94%. All new cases
+         documented in test names for quick debugging.
 ```
 
 ---
@@ -117,74 +116,70 @@ IMPACT:  No production code changed — tests confirm fixes from commit a3f9c12 
 ## 7. docs — Documentation
 
 ```
-docs(api): add rate limiting section to API reference
+docs(api): document webhook payload format and retry behavior
 
-CONTEXT: Rate limits were implemented in v1.4 but never documented, causing confusion
-         when clients received 429 responses without explanation.
-CHANGE:  Adds rate limit documentation covering per-endpoint tiers (free/pro/enterprise),
-         response headers (X-RateLimit-Remaining, X-RateLimit-Reset), and code examples
-         for handling 429 in JS and Python.
-WHY:     Developer experience survey scored 3.2/5 on API documentation — rate limits were
-         the #1 missing section. This was the most-requested docs improvement.
-IMPACT:  Reduces support tickets for rate limit errors. API docs score expected to reach 4.5/5.
+CONTEXT: Webhook consumers had to reverse-engineer payload format from
+         Stripe docs and production logs — no internal documentation.
+CHANGE:  Adds webhooks.md with: payload schema for all 6 event types,
+         retry schedule (3 attempts, exponential backoff), idempotency
+         guidance, and local testing with stripe listen.
+WHY:     Two integration PRs were delayed last quarter because developers
+         didn't know webhooks returned ISO 8601 dates, not Unix timestamps.
+IMPACT:  Self-serve onboarding for new webhook consumers. Reduces
+         integration time from ~3 days to ~4 hours.
 ```
 
 ---
 
-## 8. chore — Maintenance (Deps)
+## 8. chore — Maintenance
 
 ```
-chore(deps): upgrade axios from 0.27 to 1.6.2
+chore(deps): upgrade axios to 1.7.2 to fix CVE-2024-39338
 
-CONTEXT: axios 0.27 had a prototype pollution vulnerability (CVE-2023-45857) and our
-         nested filter params required a workaround due to axios 0.x serialization.
-CHANGE:  Updates axios to 1.6.2 and removes the manual query param serialization hack.
-WHY:     Security patch for CVE plus the fix for the nested param bug (#198) comes free
-         with the major version bump.
-IMPACT:  Resolves CVE-2023-45857. Our filter query params are now standard across all endpoints.
-
-Closes #198
-```
-
----
-
-## 9. breaking-change — Breaking API Change
-
-```
-feat(api)!: rename /user/profile to /users/{id}/profile
-
-CONTEXT: /user/profile returned full user objects for simple ID lookups, consuming 3x
-         bandwidth needed. 60% of callers only needed the user ID.
-CHANGE:  Replaces the single /user/profile endpoint with REST-compliant /users/{id}/profile.
-         Old endpoint returns 301 redirect for 90-day migration window.
-WHY:     REST consistency across the API. The 60% overhead was costing ~$200/mo in
-         unnecessary data transfer at current scale.
-IMPACT:  All clients must update endpoints. Migration guide at docs/migrations/v2-api-changes.md.
-
-BREAKING CHANGE: /user/profile is deprecated. Update to /users/{id}/profile before v3.0.
-Closes #189
+CONTEXT: Axios 1.6.x had CVE-2024-39338 (SSRF via redirect) affecting
+         all outbound HTTP calls in the payments service.
+CHANGE:  Bumps axios from 1.6.7 to 1.7.2. No breaking API changes per
+         axios changelog. All 342 existing tests pass.
+WHY:     SSRF vulnerability allows internal network probing if attacker
+         controls redirect target — critical for payments service.
+IMPACT:  CVE patched. Zero breaking changes. CI pipeline updated to
+         run `npm audit` on every build going forward.
 ```
 
 ---
 
-## 10. WIP — Work In Progress
+## 9. BREAKING CHANGE — Breaking Change
 
 ```
-WIP: feat(ml): add product recommendation engine
+feat(api)!: redesign user profile endpoint
 
-CONTEXT: Product recommendations are currently static "best sellers" — no personalization.
-CHANGE:  In-progress collaborative filtering model based on user purchase history.
-         Pipeline built, offline accuracy at 82% on test set.
-WHY:     A/B test showed 22% conversion lift with personalized recs. Full rollout expected Q3.
-IMPACT:  Pushing to share with team for early feedback. NOT ready for production.
+CONTEXT: GET /api/users/:id/profile returned 60 fields when most callers
+         only needed name + avatar. 85% of payload was unused.
+CHANGE:  Replaces /api/users/:id/profile with /api/v2/users/:id/profile
+         returning only requested fields (sparse fieldset via ?fields=).
+WHY:     Payload size reduced by 85% on list views. Sparse fieldsets
+         align with Google API AIP-157 and JSON:API spec.
+IMPACT:  Old endpoint redirects with deprecation header for 90 days.
+         All clients must update URLs and adopt field selection.
 
-Done:
-  - Purchase history data pipeline
-  - Collaborative filtering model (offline, 82% accuracy)
-TODO:
-  - Real-time inference endpoint
-  - A/B test setup
-  - Cold-start fallback for new users
+BREAKING CHANGE: /api/users/:id/profile deprecated. Use /api/v2/users/:id/profile.
+```
+
+---
+
+## 10. WIP — Work in Progress
+
+```
+WIP: refactor(notifications): migrate from email to push
+
+CONTEXT: Email notification latency was 2-5 minutes during peak hours
+         (12M emails/day). Push notifications are <500ms.
+CHANGE:  First phase: adds push notification schema, worker pool, and
+         FCM integration. Email fallback still active.
+WHY:     Incomplete — manual testing needed for FCM token expiry
+         edge case before removing email fallback.
+IMPACT:  Not for production. Use this WIP to test FCM integration in
+         staging environment.
 ```
 
 ---
@@ -192,71 +187,71 @@ TODO:
 ## 11. hotfix — Urgent Production Fix
 
 ```
-hotfix(api): restore removed pagination parameter from user list
+hotfix(api): restore removed pagination parameter from user search
 
-CONTEXT: Production monitoring detected 500 errors on /api/users — the page parameter
-         was accidentally dropped during the query parser refactor in a3f9c12.
-CHANGE:  Adds passthrough for page and per_page params in the new parser while preserving
-         the new parser structure.
-WHY:     Frontend sends these params unconditionally. 12 minutes from deploy to detection,
-         4 minutes to fix. Critical severity — all API clients affected.
-IMPACT:  API restored to working state. Root cause fix scheduled for next sprint.
+CONTEXT: Deploy v2.4.0 accidentally removed ?limit= param from
+         /api/users/search. All API clients broke — 5xx errors at 2k/min.
+CHANGE:  Restores the limit parameter with validation (1-200). Reverts
+         the interface change only, keeps internal refactor intact.
+WHY:     Hotfix must be minimal — reverting the entire deploy would lose
+         3 other bug fixes. Single-line change, 5 minutes to ship.
+IMPACT:  Restores API contract. Monitoring shows errors dropping to 0
+         within 2 minutes of deploy. Patch version bump only.
 
-Fixes INC-8472
+Closes #417
 ```
 
 ---
 
-## 12. revert — Revert
+## 12. revert — Revert a Previous Commit
 
 ```
-revert: remove buggy cursor pagination from user list
+revert: restore removed endpoint from commit a3b2c1d
 
-CONTEXT: Cursor-based pagination from b7e8f90d introduced a regression — users with
-         >100 items couldn't navigate past page 1 due to incorrect cursor encoding.
-CHANGE:  Reverts commit b7e8f90d, restoring offset-based pagination with no behavior change.
-WHY:     The cursor encoding bug blocks a core UX flow for power users. Reverting is
-         the fastest path to fix while a proper fix is developed.
-IMPACT:  User list pagination restored. Cursor pagination will be re-implemented with
-         proper base64 encoding in the next sprint.
+CONTEXT: Commit a3b2c1d removed /api/v1/orders/:id/invoice endpoint,
+         but 3 legacy mobile clients still depended on it.
+CHANGE:  Reverts a3b2c1d with git revert a3b2c1d. Adds deprecation header
+         to the restored endpoint.
+WHY:     Full deprecation process (announce → warn → remove) needs 2
+         release cycles. The revert buys time for mobile app update.
+IMPACT:  Legacy clients work again. Deprecation header logged for
+         analytics. Endpoint will be removed in v3.0.0.
 
-Fixes #312
+Refs #318
 ```
 
 ---
 
-## 13. release — Version Release
+## 13. release — Version Bump
 
 ```
 release: bump version to v2.1.0
 
-CONTEXT: Master branch contains 14 merged PRs since v2.0.0, including 3 features,
-         5 fixes, and infrastructure changes.
-CHANGE:  Bumps version to 2.1.0 and generates changelog entries for all merged commits.
-WHY:     Minor bump due to features (feat) with no breaking changes. See CHANGELOG.md.
-IMPACT:  Enables deployment to production. Tags created for rollback targets.
-
-Highlights:
-  - feat(api): add webhook event replay endpoint (#267)
-  - feat(ui): real-time dashboard updates (#271)
-  - fix(payments): handle Stripe idempotency errors (#269)
-  - perf(db): reduce analytics query time by 80% (#272)
+CONTEXT: 12 commits since v2.0.0: 3 feature, 5 bug fixes, 2 perf
+         improvements, 2 documentation updates.
+CHANGE:  Bumps version in package.json (2.0.0 → 2.1.0). Runs
+         generate-changelog.sh to update CHANGELOG.md with all entries.
+WHY:     Minor bump because feat commits are present. No breaking
+         changes detected in commit history.
+IMPACT:  Tag v2.1.0 created. CHANGELOG.md updated with emoji-grouped
+         sections. npm publish ready.
 ```
 
 ---
 
-## 14. deps — Dependency Addition
+## 14. deps — Dependency Update
 
 ```
-deps: add date-fns 3.6.0 for timezone-aware date formatting
+deps: upgrade react to 18.3.0 for concurrent features
 
-CONTEXT: All date formatting was done with raw Intl.DateTimeFormat, requiring 15+
-         lines of boilerplate per component for timezone conversion.
-CHANGE:  Adds date-fns 3.6.0 (only the required functions — tree-shaken) and creates
-         a shared dateUtils wrapper.
-WHY:     date-fns is 4kB gzipped with tree-shaking vs 72kB for moment.js. No runtime
-         cost for SSR since it's tree-shaken. Formats matches our design system.
-IMPACT:  Reduces date formatting code by ~60%. All existing dates remain unchanged.
+CONTEXT: React 18.2.0 was 8 months old, missing the useOptimistic hook
+         and automatic batching improvements in 18.3.0.
+CHANGE:  Bumps react and react-dom from 18.2.0 to 18.3.0. Updates
+         @types/react to match. No API changes needed.
+WHY:     New useOptimistic hook simplifies optimistic UI for the cart
+         feature planned in Q3. Automatic batching reduces re-renders.
+IMPACT:  Zero breaking changes. Enables useOptimistic for cart feature.
+         Paves way for React 19 upgrade next quarter.
 ```
 
 ---
@@ -266,14 +261,15 @@ IMPACT:  Reduces date formatting code by ~60%. All existing dates remain unchang
 ```
 migration: add email_verified column to users table
 
-CONTEXT: Email verification status was stored in a separate redis key, lost on cache
-         flush — causing 200+ users/month to re-verify after cache wipes.
-CHANGE:  Adds email_verified boolean (default false) and verified_at timestamp to
-         the users table. Backfills existing verified users from audit logs.
-WHY:     Persistent storage is required for compliance (SOC2 audit trail). Cache-only
-         storage violated our data retention policy.
-IMPACT:  Downstream: add email_verified to user serializers and profile UI. Migration
-         is reversible: ALTER TABLE users DROP COLUMN email_verified.
-
-Part of #401
+CONTEXT: User registration flow couldn't verify emails because the
+         users table had no email_verified column or timestamp.
+CHANGE:  Adds email_verified (BOOLEAN, DEFAULT false) and
+         email_verified_at (TIMESTAMPTZ, NULLABLE) columns.
+         Creates index on (email_verified, created_at) for admin queries.
+WHY:     Email verification is prerequisite for passwordless login
+         feature. Migration is reversible: down script drops both
+         columns and index.
+IMPACT:  No impact on existing rows (nullable columns, default false).
+         Admin panel benefits from new index for user filtering.
+         Next: verification email flow in follow-up PR.
 ```

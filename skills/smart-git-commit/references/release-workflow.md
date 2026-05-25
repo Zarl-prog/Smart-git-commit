@@ -1,120 +1,206 @@
 # Release Workflow
 
-## Semantic Versioning
+## Semantic Versioning Guide
 
-Given a version number `MAJOR.MINOR.PATCH`:
+Given a version number **MAJOR.MINOR.PATCH** (e.g., `2.1.3`):
 
-| Increment | When | Example |
-|-----------|------|---------|
-| **MAJOR** | Breaking changes (`BREAKING CHANGE` footer) | `1.0.0` → `2.0.0` |
-| **MINOR** | New features (`feat:` commits) | `1.0.0` → `1.1.0` |
-| **PATCH** | Bug fixes (`fix:` commits) | `1.0.0` → `1.0.1` |
+| Bump | When | Example |
+|------|------|---------|
+| **MAJOR** | Breaking changes in commit messages (BREAKING CHANGE footer or `!` suffix) | `1.0.0` → `2.0.0` |
+| **MINOR** | New features (`feat:` commits) without breaking changes | `1.0.0` → `1.1.0` |
+| **PATCH** | Bug fixes, performance, security, refactors only (no feat commits) | `1.0.0` → `1.0.1` |
 
-Pre-release suffixes: `-alpha.1`, `-beta.2`, `-rc.1`
+Additional labels for pre-release and build metadata:
 
-## Release Process
-
-### Step 1: Read Current Version
-
-```bash
-# Common locations
-cat package.json | grep '"version"'
-cat pyproject.toml | grep 'version'
-cat Cargo.toml | grep 'version'
-grep '^version' mix.exs 2>/dev/null
-grep '^VERSION' Makefile 2>/dev/null
-
-# If none found, ask user for current version
+```
+1.0.0-alpha.1       → Early testing
+1.0.0-beta.1        → Feature complete, testing
+1.0.0-rc.1          → Release candidate
+1.0.0               → Stable release
+1.0.1+build.123     → Build metadata (ignored for precedence)
 ```
 
-### Step 2: Generate Changelog
+Pre-release versions have **lower** precedence than the normal version:
+`1.0.0-alpha < 1.0.0 < 1.1.0`
+
+---
+
+## Step-by-Step Release Process
+
+### Phase 1: Prepare
 
 ```bash
-# Run the changelog script
-bash scripts/generate-changelog.sh
-# This groups commits by type and prepends to CHANGELOG.md
-```
-
-### Step 3: Determine New Version
-
-Check the commits since the last tag:
-- Contains `BREAKING CHANGE` → bump MAJOR
-- Contains `feat:` commits → bump MINOR
-- Contains only `fix:` / `chore:` / `docs:` → bump PATCH
-
-### Step 4: Update Version File
-
-```bash
-# For npm projects
-npm version patch --no-git-tag-version
-npm version minor --no-git-tag-version
-npm version major --no-git-tag-version
-
-# Manual update
-sed -i 's/"version": "1.0.0"/"version": "1.0.1"/' package.json
-```
-
-### Step 5: Commit + Tag Release
-
-```bash
-git add CHANGELOG.md <version-file>
-git commit -m "release: bump version to v1.x.x"
-git tag -a v1.x.x -m "Release v1.x.x"
-git push origin main --tags
-```
-
-## Branching Strategy
-
-| Branch | Purpose | Lifecycle |
-|--------|---------|-----------|
-| `main` | Production-ready releases | Protected, no direct pushes |
-| `develop` | Integration branch | Feature branches merge here |
-| `feature/*` | New features | Branched from develop, merges back |
-| `fix/*` | Bug fixes | Branched from main, merges back |
-| `hotfix/*` | Urgent production fixes | Branched from main, merges to main + develop |
-| `release/*` | Release preparation | Branched from develop, merges to main + develop |
-
-## Hotfix Release
-
-```bash
-git checkout main
-git checkout -b hotfix/critical-bug
-# Fix the bug
-git commit -m "fix: critical bug description"
-git push origin hotfix/critical-bug
-# Create PR to main, then merge
-# After merge: bump PATCH version, tag, deploy
-# Cherry-pick back to develop:
+# 1. Ensure you're on the release branch
 git checkout develop
-git cherry-pick <hotfix-commit-hash>
+git pull origin develop
+
+# 2. Create release branch
+git checkout -b release/v2.1.0
+
+# 3. Run full test suite
+bash scripts/detect-test-runner.sh
 ```
 
-## Changelog Format
+### Phase 2: Generate Changelog
+
+```bash
+# 4. Check commits since last tag
+git log --oneline v2.0.0..HEAD
+
+# 5. Generate changelog
+bash scripts/generate-changelog.sh
+```
+
+This parses all commits since the last tag, groups by type, and prepends
+to CHANGELOG.md. Review and edit the generated entries.
+
+### Phase 3: Bump Version
+
+```bash
+# 6. Update version in manifest file
+# package.json:
+#   "version": "2.1.0"
+# pyproject.toml:
+#   version = "2.1.0"
+# Cargo.toml:
+#   version = "2.1.0"
+
+# 7. Commit the version bump
+git add package.json CHANGELOG.md
+git commit -m "chore(release): bump version to v2.1.0" \
+  -m "CONTEXT: 12 commits since v2.0.0 with 3 feat commits requiring minor bump." \
+  -m "CHANGE:  Bumps version from 2.0.0 to 2.1.0. Updates CHANGELOG.md with all entries." \
+  -m "WHY:     Minor bump because feat commits are present. No breaking changes." \
+  -m "IMPACT:  Prepares for release. CHANGELOG.md documents all changes since last release."
+```
+
+### Phase 4: Tag
+
+```bash
+# 8. Create annotated tag
+git tag -a v2.1.0 -m "Release v2.1.0"
+
+# 9. Push both commit and tags
+git push origin release/v2.1.0
+git push origin v2.1.0
+```
+
+### Phase 5: GitHub Release
+
+```bash
+# 10. Create GitHub Release
+gh release create v2.1.0 \
+  --title "v2.1.0" \
+  --notes-file <(echo "See CHANGELOG.md for details") \
+  --target release/v2.1.0
+```
+
+### Phase 6: Merge
+
+```bash
+# 11. Merge release branch to main
+gh pr create --title "Release v2.1.0" --base main --head release/v2.1.0
+# After merge:
+git checkout main && git pull
+
+# 12. Back-merge to develop
+git checkout develop && git merge main
+git push origin develop
+
+# 13. Delete release branch (local and remote)
+git branch -d release/v2.1.0
+git push origin --delete release/v2.1.0
+```
+
+---
+
+## Hotfix Release Process
+
+For urgent production fixes that can't wait for the next release cycle.
+
+```bash
+# 1. Branch from the release tag (NOT from develop)
+git checkout -b hotfix/critical-bug v2.0.0
+
+# 2. Make the fix
+# ... edit files ...
+
+# 3. Commit with hotfix type
+git add src/api/
+git commit -m "hotfix(api): restore removed pagination parameter" \
+  -m "CONTEXT: Deploy v2.0.0 removed ?limit= param — all API clients broken." \
+  -m "CHANGE:  Restores limit parameter with validation (1-200)." \
+  -m "WHY:     Hotfix must be minimal — revert entire deploy would lose 3 fixes." \
+  -m "IMPACT:  Single-line change, 5 min to ship. Patch version bump only."
+
+# 4. Tag and push
+git tag -a v2.0.1 -m "Hotfix v2.0.1"
+git push origin hotfix/critical-bug
+git push origin v2.0.1
+
+# 5. Create PR targeting main
+gh pr create --title "Hotfix v2.0.1 — restore pagination param" \
+  --base main --head hotfix/critical-bug --draft
+
+# 6. After merge to main, cherry-pick to develop
+git checkout develop && git cherry-pick v2.0.1
+git push origin develop
+```
+
+---
+
+## Pre-Release Process
+
+For alpha/beta/RC releases before a stable release.
+
+```bash
+# 1. From release branch, tag as pre-release
+git tag -a v2.1.0-beta.1 -m "Beta 1 of v2.1.0"
+
+# 2. Push tags
+git push origin v2.1.0-beta.1
+
+# 3. Create pre-release on GitHub
+gh release create v2.1.0-beta.1 \
+  --title "v2.1.0-beta.1" \
+  --prerelease
+
+# 4. Iterate with beta.2, beta.3, rc.1, etc.
+# Each pre-release gets its own tag
+```
+
+---
+
+## Automated Version Detection
+
+When running `scripts/generate-changelog.sh`, the version is auto-detected:
+
+| Commit Contents | Bump | Example |
+|----------------|------|---------|
+| Contains `BREAKING CHANGE:` or `!` suffix | MAJOR | 1.0.0 → 2.0.0 |
+| Contains `feat:` commits | MINOR | 1.0.0 → 1.1.0 |
+| Only `fix:`, `perf:`, `refactor:`, etc. | PATCH | 1.0.0 → 1.0.1 |
+| No changes since last tag | No bump | Stays at current version |
+
+---
+
+## CHANGELOG.md Format
+
+The generated changelog uses [Keep a Changelog](https://keepachangelog.com/) format
+with emoji-categorized sections:
 
 ```markdown
-# Changelog
+## [2.1.0] — 2026-06-15
 
-## [1.1.0] - 2024-03-15
+### ✨ Features
+- **(api)**: add pagination to user list endpoint (CONTEXT: 15s load times...)
 
-### Features
-- feat(auth): add OAuth2 login with Google (#42)
-- feat(api): add pagination to user list endpoint (#38)
+### 🐛 Bug Fixes
+- **(payments)**: prevent double-charge on Stripe webhook retry
 
-### Bug Fixes
-- fix(payments): handle null response from gateway (#41)
+### ⚡ Performance
+- **(db)**: add composite index on org_id
 
-### Performance
-- perf(db): add composite index on (user_id, created_at) (#39)
-
-### Security
-- security(api): add rate limiting to login endpoint (#40)
-
-### Maintenance
-- chore(deps): upgrade axios to 1.6.2 (#37)
-- docs(api): update rate limiting docs (#36)
-
-## [1.0.0] - 2024-02-01
-
-### Initial Release
-- Initial project setup with all core features
+### 🔐 Security
+- **(api)**: add rate limiting to login endpoint
 ```
