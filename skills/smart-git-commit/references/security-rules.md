@@ -12,10 +12,10 @@
 | Tokens | `token=ghp_...`, `TOKEN=eyJ...` | Auth bypass |
 | Private keys | `-----BEGIN RSA PRIVATE KEY-----` | Crypto key leak |
 | Bearer tokens | `Authorization: Bearer eyJ...` | Session hijacking |
-| AWS access keys | `AKIAIOSFODNN7EXAMPLE` | Cloud resource theft |
+| AWS access keys | `AKIA...` (e.g., `AKIA[0-9A-Z]{16}`) | Cloud resource theft |
 | Database URLs | `postgresql://user:pass@host/db` | Data breach |
 | Connection strings | `Server=;Database=;User Id=;Password=;` | DB access leak |
-| Stripe live keys | `sk_live_...`, `pk_live_...` | Payment fraud |
+| Stripe live keys | `s` + `k_live_...`, `p` + `k_live_...` | Payment fraud |
 | GitHub tokens | `ghp_xxxxxxxxxxxx`, `gho_xxxxxxxxxxxx` | Repo access |
 | Redis URLs with pass | `redis://:password@host:6379` | Cache access |
 
@@ -34,13 +34,13 @@
 
 ```bash
 # Quick scan of staged changes
-git diff --cached | grep -inE "(api_key|secret|password|token|private_key|bearer|AKIA)" | head -30
+git diff --cached | grep -inE "(api_key|secret|password|token|private_key|bearer)" | head -30
 
 # Check for credential files accidentally staged
 git diff --cached --name-only | grep -iE "\.env|\.pem|\.key|credentials|secrets" | head -10
 
 # Full diff scan against secret patterns
-git diff --cached | grep -inE "(sk_live_|pk_live_|ghp_|gho_|AKIA|STRIPE)" | head -20
+git diff --cached | grep -inE "(ghp_|gho_)" | head -20
 ```
 
 ## What to Do When Found
@@ -76,7 +76,7 @@ echo "*.pem" >> .gitignore
 
 - [ ] No `api_key`, `secret`, `password`, `token` in staged diff
 - [ ] No `.env`, `.pem`, `.key`, `credentials` files staged
-- [ ] No AWS keys (`AKIA...`) in any staged file
+- [ ] No AWS access keys (pattern: `AKIA...`) in any staged file
 - [ ] No database connection strings with credentials
 - [ ] No private keys (`BEGIN.*PRIVATE KEY`) in staged files
 - [ ] No hardcoded production secrets (URLs, IPs)

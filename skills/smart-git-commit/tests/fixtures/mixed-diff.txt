@@ -1,0 +1,62 @@
+This is a simulated git diff containing 3 mixed concerns:
+1. A feature change (src/invoice/generator.py)
+2. A bug fix (src/auth/session.py)
+3. A documentation update (README.md)
+
+When run through split-commits.sh, this should be split into 3 atomic commits.
+
+--- a/src/invoice/generator.py
++++ b/src/invoice/generator.py
+@@ -1,5 +1,17 @@
+ from reportlab.lib.pagesizes import letter
+ from reportlab.pdfgen import canvas
++from reportlab.lib.colors import HexColor
++from decimal import Decimal
++from typing import Optional
+
+ def generate_invoice(order):
++    """
++    Generate a PDF invoice for the given order.
++    Supports multi-currency with automatic conversion.
++    """
++    convert_to = order.get('currency', 'USD')
++    # Convert all line items to the target currency
++    for item in order['items']:
++        item['price'] = convert_currency(item['price'], item.get('currency', 'USD'), convert_to)
++
+     c = canvas.Canvas(f"invoice_{order['id']}.pdf", pagesize=letter)
+     c.drawString(100, 750, f"Invoice #{order['id']}")
+
+--- a/src/auth/session.py
++++ b/src/auth/session.py
+@@ -42,7 +42,7 @@ class SessionManager:
+         session = self.sessions.get(session_id)
+         if not session:
+             return None
+-        if session.expires_at < datetime.utcnow():
++        if session.expires_at <= datetime.utcnow():
+             del self.sessions[session_id]
+             return None
+         return session
+@@ -55,6 +55,7 @@ class SessionManager:
+     def refresh_session(self, session_id: str) -> Optional[Session]:
+         session = self.sessions.get(session_id)
+         if session and session.expires_at > datetime.utcnow():
++            session.expires_at = datetime.utcnow() + timedelta(minutes=30)
+             return session
+         return None
+
+--- a a/README.md
++++ b/README.md
+@@ -10,3 +10,7 @@ An e-commerce platform built with Flask.
+
+ ## Getting Started
+
+ 1. Clone the repo
+ 2. Run `pip install -r requirements.txt`
+ 3. Set up environment variables (see .env.example)
++4. Run database migrations: `flask db upgrade`
++
++## API Documentation
++
++See `docs/api.md` for endpoint reference and authentication details.
