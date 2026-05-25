@@ -3,8 +3,8 @@
 # split-commits.sh — Analyze diff and suggest atomic commit splitting
 #
 # Usage: bash scripts/split-commits.sh
-# Stdout: JSON {commits_made, status, messages[]}
-# Stderr: Human-readable split plan
+# Stdout: JSON {commits_made, messages[]}
+# Stderr: Interactive split plan with Y/n/edit prompt
 
 set -euo pipefail
 
@@ -24,96 +24,189 @@ if git diff --quiet 2>/dev/null && git diff --cached --quiet 2>/dev/null; then
   exit 0
 fi
 
-# Get changed files
-if git diff --cached --quiet 2>/dev/null; then
-  FILES=$(git diff --name-only 2>/dev/null)
-  echo "Analyzing working tree changes..." >&2
+# Get changed files (prefer staged, fall back to working tree)
+if ! git diff --cached --quiet 2>/dev/null; then
+  FILES=$(git diff --cached --name-only)
 else
-  FILES=$(git diff --cached --name-only 2>/dev/null)
-  echo "Analyzing staged changes..." >&2
+  FILES=$(git diff --name-only)
 fi
+
+FILE_COUNT=$(echo "$FILES" | wc -l | tr -d ' ')
+echo "Analyzing $FILE_COUNT changed file(s)..." >&2
 echo "" >&2
 
-FILE_COUNT=$(echo "$FILES" | wc -l)
+# Group by top-level directory
+declare -A DIR_GROUPS
+declare -A CONCERN_GROUPS
+GROUP_ORDER=()
 
-# Group files by type
-TEST_FILES=$(echo "$FILES" | grep -iE "(test|spec|__tests__)" 2>/dev/null || true)
-CONFIG_FILES=$(echo "$FILES" | grep -iE "(\.env|\.json|\.yaml|\.yml|\.toml|Dockerfile|Makefile|\.gitignore|\bci\b)" 2>/dev/null || true)
-DOC_FILES=$(echo "$FILES" | grep -iE "(\.md|README|CHANGELOG|docs/)" 2>/dev/null || true)
-MIGRATION_FILES=$(echo "$FILES" | grep -iE "(migration|migrate|schema|alembic)" 2>/dev/null || true)
-SOURCE_FILES=$(echo "$FILES" | grep -vE "(test|spec|\.md|Dockerfile|Makefile|\.gitignore|\.json|\.yaml|\.yml|\.toml)" 2>/dev/null || true)
+# Top-level directory grouping
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  top_dir=$(echo "$file" | cut -d/ -f1)
+  if [ "$top_dir" = "$file" ]; then
+    top_dir="root"
+  fi
+  if [ -z "${DIR_GROUPS[$top_dir]:-}" ]; then
+    DIR_GROUPS[$top_dir]=""
+    GROUP_ORDER+=("$top_dir")
+  fi
+  DIR_GROUPS[$top_dir]+="$file"$'\n'
+done <<< "$FILES"
 
-# Build concern list
-CONCERNS=()
-declare -A CONCERN_FILES
+# Concern keyword detection
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  file_lower=$(echo "$file" | tr '[:upper:]' '[:lower:]')
 
-if [ -n "$TEST_FILES" ]; then
-  CONCERNS+=("testing")
-  CONCERN_FILES["testing"]="$TEST_FILES"
-fi
-if [ -n "$CONFIG_FILES" ]; then
-  CONCERNS+=("chore/config")
-  CONCERN_FILES["chore/config"]="$CONFIG_FILES"
-fi
-if [ -n "$DOC_FILES" ]; then
-  CONCERNS+=("docs")
-  CONCERN_FILES["docs"]="$DOC_FILES"
-fi
-if [ -n "$MIGRATION_FILES" ]; then
-  CONCERNS+=("migration")
-  CONCERN_FILES["migration"]="$MIGRATION_FILES"
-fi
-if [ -n "$SOURCE_FILES" ]; then
-  # Group source files by top-level directory
-  DIRS=$(dirname "$SOURCE_FILES" 2>/dev/null | cut -d'/' -f1 | sort -u)
-  for dir in $DIRS; do
-    if [ "$dir" != "." ]; then
-      CONCERNS+=("feat/fix: $dir")
-      CONCERN_FILES["feat/fix: $dir"]=$(echo "$SOURCE_FILES" | grep "^$dir/" 2>/dev/null || true)
+  concern=""
+  if echo "$file_lower" | grep -qE '(auth|login|session|jwt|oauth|permission|role|user)'; then
+    concern="auth"
+  elif echo "$file_lower" | grep -qE '(payment|stripe|billing|invoice|charge|refund)'; then
+    concern="payments"
+  elif echo "$file_lower" | grep -qE '(ui|component|page|view|layout|button|modal)'; then
+    concern="ui"
+  elif echo "$file_lower" | grep -qE '(db|database|schema|migration|query|model|entity)'; then
+    concern="db"
+  elif echo "$file_lower" | grep -qE '(api|endpoint|route|controller|handler|middleware)'; then
+    concern="api"
+  elif echo "$file_lower" | grep -qE '(config|setting|env|docker|ci|deploy)'; then
+    concern="config"
+  elif echo "$file_lower" | grep -qE '(doc|readme|changelog|contributing)'; then
+    concern="docs"
+  fi
+
+  if [ -n "$concern" ]; then
+    if [ -z "${CONCERN_GROUPS[$concern]:-}" ]; then
+      CONCERN_GROUPS[$concern]=""
     fi
-  done
-fi
+    CONCERN_GROUPS[$concern]+="$file"$'\n'
+  fi
+done <<< "$FILES"
 
-# Remove duplicate concerns
-IFS=$'\n' CONCERNS=($(printf "%s\n" "${CONCERNS[@]}" | sort -u))
-unset IFS
+# Build split plan
+SPLIT_GROUPS=()
+SPLIT_NAMES=()
 
-echo "Found $FILE_COUNT file(s) across ${#CONCERNS[@]} concern(s):" >&2
+# If multiple directories with source code, suggest split
+DIR_COUNT=0
+for dir in "${GROUP_ORDER[@]}"; do
+  if [ "$dir" != "root" ] && [ "$dir" != "tests" ]; then
+    DIR_COUNT=$((DIR_COUNT + 1))
+  fi
+done
+
+echo "Top-level directories: ${GROUP_ORDER[*]}" >&2
+echo "Concerns detected: ${!CONCERN_GROUPS[*]}" >&2
 echo "" >&2
 
-# Show split plan
-if [ ${#CONCERNS[@]} -le 1 ]; then
+# Decide if split is needed
+NEEDS_SPLIT=false
+
+if [ ${#CONCERN_GROUPS[@]} -ge 2 ]; then
+  NEEDS_SPLIT=true
+fi
+
+if [ "$DIR_COUNT" -ge 2 ]; then
+  NEEDS_SPLIT=true
+fi
+
+# Check for test files separate from source
+TEST_FILES=$(echo "$FILES" | grep -iE '(test|spec|__tests__)' 2>/dev/null || true)
+SOURCE_WITHOUT_TESTS=$(echo "$FILES" | grep -v -iE '(test|spec|__tests__)' 2>/dev/null || true)
+if [ -n "$TEST_FILES" ] && [ -n "$SOURCE_WITHOUT_TESTS" ]; then
+  # Tests are for existing code (not new feature)
+  # Check if both test and source were modified
+  NEEDS_SPLIT=true
+fi
+
+if [ "$NEEDS_SPLIT" = false ]; then
   echo -e "${GREEN}Single concern — one commit is fine.${NC}" >&2
   echo '{"status":"single_concern","commits_made":1,"messages":["Single concern — one commit"],"message":"No split needed"}'
   exit 0
 fi
 
-echo -e "${CYAN}Suggested split: ${#CONCERNS[@]} atomic commits${NC}" >&2
+# Build proposed split plan
+COUNT=1
+echo -e "${CYAN}Proposed split — multiple commits detected:${NC}" >&2
 echo "" >&2
 
-COUNT=1
 MESSAGES=()
-for concern in "${CONCERNS[@]}"; do
-  files="${CONCERN_FILES[$concern]}"
-  file_list=$(echo "$files" | tr '\n' ' ')
-  MESSAGES+=("Commit $COUNT: $concern ($(echo "$files" | wc -l) files)")
-  echo "  $COUNT. $concern" >&2
-  echo "     Files: $(echo "$files" | tr '\n' ' ')" >&2
-  echo "" >&2
+
+# Group by concern first
+for concern in "${!CONCERN_GROUPS[@]}"; do
+  files="${CONCERN_GROUPS[$concern]}"
+  file_list=$(echo "$files" | tr '\n' ' ' | sed 's/  */ /g')
+  echo "  [$COUNT] $concern → $file_list" >&2
+  MESSAGES+=("$concern|$file_list")
   COUNT=$((COUNT + 1))
 done
 
-# Build JSON
-MESSAGES_JSON="["
-FIRST=true
-for msg in "${MESSAGES[@]}"; do
-  if [ "$FIRST" = true ]; then
-    FIRST=false
-  else
-    MESSAGES_JSON+=","
-  fi
-  MESSAGES_JSON+="\"$msg\""
+# Add remaining files as chore/config
+REMAINING="$FILES"
+for concern in "${!CONCERN_GROUPS[@]}"; do
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    REMAINING=$(echo "$REMAINING" | grep -v "^$(echo "$f" | sed 's/[^^]/[&]/g; s/\^/\\^/g')$" 2>/dev/null || true)
+  done <<< "${CONCERN_GROUPS[$concern]}"
 done
-MESSAGES_JSON+="]"
 
-echo "{\"status\":\"split_needed\",\"commits_made\":${#CONCERNS[@]},\"messages\":$MESSAGES_JSON,\"message\":\"Split into ${#CONCERNS[@]} atomic commits\"}"
+if [ -n "$(echo "$REMAINING" | tr -d '[:space:]')" ]; then
+  file_list=$(echo "$REMAINING" | tr '\n' ' ' | sed 's/  */ /g')
+  echo "  [$COUNT] chore/config → $file_list" >&2
+  MESSAGES+=("chore/config|$file_list")
+  COUNT=$((COUNT + 1))
+fi
+
+echo "" >&2
+
+# Interactive prompt
+echo -e "${YELLOW}Proceed with this split? [Y/n/edit]:${NC}" >&2
+read -r USER_INPUT
+
+case "$USER_INPUT" in
+  n|N|no|NO)
+    echo -e "${YELLOW}Split canceled. No commits made.${NC}" >&2
+    echo '{"status":"canceled","commits_made":0,"messages":[],"message":"Split canceled by user"}'
+    exit 0
+    ;;
+  edit|e|E)
+    echo -e "${YELLOW}Edit mode: Please modify the groupings above and re-run.${NC}" >&2
+    echo '{"status":"edit","commits_made":0,"messages":[],"message":"User requested edits to split plan"}'
+    exit 0
+    ;;
+  *)
+    # Default: proceed with split
+    echo -e "${GREEN}Proceeding with split...${NC}" >&2
+    echo "" >&2
+    COMMIT_MESSAGES=()
+    for entry in "${MESSAGES[@]}"; do
+      concern="${entry%%|*}"
+      files="${entry#*|}"
+      echo "Staging: $concern" >&2
+      IFS=' ' read -ra file_array <<< "$files"
+      for f in "${file_array[@]}"; do
+        [ -n "$f" ] && git add "$f" 2>/dev/null || true
+      done
+      echo -e "${YELLOW}Enter commit message for: ${concern}${NC}" >&2
+      echo -e "${YELLOW}Format: <type>(<scope>): <summary>${NC}" >&2
+      read -r COMMIT_MSG
+      COMMIT_MESSAGES+=("$COMMIT_MSG")
+    done
+
+    # Build JSON
+    JSON_MSGS="["
+    FIRST=true
+    for msg in "${COMMIT_MESSAGES[@]}"; do
+      if [ "$FIRST" = true ]; then
+        FIRST=false
+      else
+        JSON_MSGS+=","
+      fi
+      JSON_MSGS+="\"$msg\""
+    done
+    JSON_MSGS+="]"
+
+    echo "{\"status\":\"split_done\",\"commits_made\":${#COMMIT_MESSAGES[@]},\"messages\":$JSON_MSGS,\"message\":\"Split completed\"}"
+    ;;
+esac

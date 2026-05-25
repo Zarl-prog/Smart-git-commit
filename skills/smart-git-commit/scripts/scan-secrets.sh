@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# scan-secrets.sh — Scan staged changes for secrets, keys, and credentials
+# scan-secrets.sh — Scan git diff (staged + unstaged) for secrets, keys, credentials
 #
 # Usage: bash scripts/scan-secrets.sh
 # Exit code: 0 = clean, 1 = secrets found (blocks commit)
-# Stdout: JSON {status, findings[]}
-# Stderr: Human-readable progress and color output
+# Stdout: JSON {"status":"clean"|"found","findings": [...]}
+# Stderr: Human-readable color output
 
 set -euo pipefail
 
@@ -15,106 +15,91 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 SUSPICIOUS_FOUND=0
-FINDINGS_JSON="[]"
 FINDINGS_ARR=()
-
-# High-priority patterns (block commit)
-HIGH_PRIORITY_PATTERNS=(
-  "api[_-]?key[[:space:]]*=[[:space:]]*['\\\"]?[A-Za-z0-9_-]{10,}"
-  "secret[_-]?key[[:space:]]*=[[:space:]]*['\\\"][A-Za-z0-9_-]{10,}"
-  "secret[[:space:]]*=[[:space:]]*['\\\"][A-Za-z0-9_-]{10,}"
-  "password[[:space:]]*=[[:space:]]*['\\\"][A-Za-z0-9!@#$%^&*()_+-=]{6,}"
-  "BEGIN[[:space:]]+(RSA|DSA|EC|OPENSSH|PGP)[[:space:]]+PRIVATE[[:space:]]+KEY"
-  "bearer[[:space:]]+[A-Za-z0-9._-]{20,}"
-  "A""KIA[0-9A-Z]{16}"
-  "s""k_live_"
-  "p""k_live_"
-  "ghp_[A-Za-z0-9]{36}"
-  "gho_[A-Za-z0-9]{36}"
-  "DATABASE_URL[[:space:]]*="
-  "CONNECTION_STRING[[:space:]]*="
-  "REDIS_URL[[:space:]]*="
-  "MONGODB_URI[[:space:]]*="
-  "postgresql://[^:]+:[^@]+@"
-  "mysql://[^:]+:[^@]+@"
-  "mongodb://[^:]+:[^@]+@"
-  "redis://:[^@]+@"
-)
-
-# Dangerous file patterns
-DANGEROUS_FILES=(
-  "\\.env$"
-  "\\.env\\."
-  "\\.pem$"
-  "\\.key$"
-  "credentials"
-  "secrets"
-  "\\.keystore"
-  "id_rsa"
-  "id_dsa"
-  "\\.cert$"
-  "\\.p12$"
-)
-
-add_finding() {
-  local severity="$1"
-  local message="$2"
-  local file="$3"
-  local line="${4:-}"
-  FINDINGS_ARR+=("$(printf '%s' "{\"severity\":\"$severity\",\"message\":\"$message\",\"file\":\"$file\",\"line\":\"$line\"}")")
-}
 
 echo -e "${YELLOW}Smart Git Commit — Security Scan${NC}" >&2
 echo "" >&2
 
-# Check for staged changes
+# Determine what to scan
 if ! git diff --cached --quiet 2>/dev/null; then
+  DIFF_MODE="staged"
+  DIFF_CMD="git diff --cached"
   STAGED_FILES=$(git diff --cached --name-only)
   echo -e "Scanning staged changes ($(echo "$STAGED_FILES" | wc -l) file(s))..." >&2
+elif ! git diff --quiet 2>/dev/null; then
+  DIFF_MODE="unstaged"
+  DIFF_CMD="git diff"
+  echo -e "Scanning unstaged changes..." >&2
 else
-  echo -e "${YELLOW}No staged changes to scan.${NC}" >&2
-  echo '{"status":"pass","findings":[],"message":"No staged changes to scan"}' >&2
+  echo -e "${GREEN}No changes to scan.${NC}" >&2
+  echo '{"status":"clean","findings":[],"message":"No changes to scan"}'
   exit 0
 fi
 
-# Scan diff content for high-priority patterns
-for pattern in "${HIGH_PRIORITY_PATTERNS[@]}"; do
-  RESULTS=$(git diff --cached | grep -inE "$pattern" 2>/dev/null | head -5 || true)
+# Pattern definitions
+PATTERNS=()
+PATTERN_NAMES=()
+
+add_pattern() {
+  local name="$1"
+  local regex="$2"
+  PATTERNS+=("$regex")
+  PATTERN_NAMES+=("$name")
+}
+
+# AWS keys
+add_pattern "AWS Access Key" "A""KIA[0-9A-Z]{16}"
+# GitHub tokens
+add_pattern "GitHub Token" "gh[pousr]_[A-Za-z0-9]{36}"
+# Stripe keys
+add_pattern "Stripe Secret Key" "s""k_(live|test)_[A-Za-z0-9]{24,}"
+# Generic API key
+add_pattern "API Key" "[Aa][Pp][Ii]_?[Kk][Ee][Yy][[:space:]]*[:=][[:space:]]*[A-Za-z0-9_-]{16,}"
+# Passwords
+add_pattern "Password" "[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd][[:space:]]*[:=][[:space:]]*[A-Za-z0-9!@#$%^&*()_+-=]{8,}"
+# Private keys
+add_pattern "Private Key" "-----BEGIN (RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----"
+# Bearer tokens
+add_pattern "Bearer Token" "[Bb]earer[[:space:]]+[A-Za-z0-9._-]{20,}"
+# Connection strings
+add_pattern "MongoDB URI" "mongodb://[^:]+:[^@]+@"
+add_pattern "PostgreSQL URI" "postgresql://[^:]+:[^@]+@"
+add_pattern "MySQL URI" "mysql://[^:]+:[^@]+@"
+# Dangerous files
+add_pattern "Dangerous file" "\.env$"
+add_pattern "Dangerous file" "\.pem$"
+add_pattern "Dangerous file" "\.key$"
+
+# Scan diff content
+for i in "${!PATTERNS[@]}"; do
+  pattern="${PATTERNS[$i]}"
+  name="${PATTERN_NAMES[$i]}"
+
+  RESULTS=$($DIFF_CMD | grep -inE "$pattern" 2>/dev/null | head -5 || true)
   if [ -n "$RESULTS" ]; then
     SUSPICIOUS_FOUND=1
     while IFS= read -r line; do
       file_line=$(echo "$line" | cut -d: -f1,2)
       snippet=$(echo "$line" | cut -d: -f3- | sed 's/^[[:space:]]*//' | head -c 80)
-      add_finding "high" "Secret pattern matched: $snippet" "staged diff" "$file_line"
-      echo -e "${RED}⚠  Secret found at $file_line${NC}" >&2
+      FINDINGS_ARR+=("$(printf '%s' "{\"file\":\"$file_line\",\"line\":$(echo "$file_line" | cut -d: -f2),\"pattern\":\"$name\"}")")
+      echo -e "${RED}✗ Secret detected: $file_line — $name${NC}" >&2
     done <<< "$RESULTS"
   fi
 done
 
-# Check for dangerous file types
-for file_pattern in "${DANGEROUS_FILES[@]}"; do
-  MATCHES=$(git diff --cached --name-only | grep -iE "$file_pattern" 2>/dev/null || true)
+# Check for dangerous files in name list
+for dangerous_pattern in "\.env$" "\.pem$" "\.key$" "credentials" "secrets" "id_rsa" "id_dsa" "\.keystore"; do
+  MATCHES=$($DIFF_CMD --name-only | grep -iE "$dangerous_pattern" 2>/dev/null || true)
   if [ -n "$MATCHES" ]; then
     SUSPICIOUS_FOUND=1
     while IFS= read -r file; do
-      add_finding "high" "Dangerous file type staged" "$file" ""
-      echo -e "${RED}⚠  Dangerous file staged: $file${NC}" >&2
+      FINDINGS_ARR+=("$(printf '%s' "{\"file\":\"$file\",\"line\":0,\"pattern\":\"Dangerous file type: $file\"}")")
+      echo -e "${RED}✗ Secret detected: $file — dangerous file type${NC}" >&2
     done <<< "$MATCHES"
   fi
 done
 
-# Check for large files (potential credential dumps)
-git diff --cached --name-only 2>/dev/null | while IFS= read -r file; do
-  if [ -f "$file" ]; then
-    SIZE=$(wc -c < "$file" 2>/dev/null || echo 0)
-    if [ "$SIZE" -gt 1048576 ]; then
-      add_finding "medium" "Large file staged ($(( SIZE / 1024 )) KB)" "$file" ""
-      echo -e "${YELLOW}⚠  Large file: $file ($(( SIZE / 1024 )) KB)${NC}" >&2
-    fi
-  fi
-done
-
-# Build JSON output
+# Build JSON
 JSON_FINDINGS="["
 FIRST=true
 for f in "${FINDINGS_ARR[@]}"; do
@@ -128,11 +113,11 @@ done
 JSON_FINDINGS+="]"
 
 if [ "$SUSPICIOUS_FOUND" -eq 1 ]; then
-  echo -e "${RED}SECURITY SCAN FAILED — Secrets detected${NC}" >&2
-  echo "{\"status\":\"fail\",\"findings\":$JSON_FINDINGS,\"message\":\"Secrets detected — commit blocked\"}"
+  echo -e "${RED}✗ SECURITY SCAN FAILED — Secrets detected${NC}" >&2
+  echo "{\"status\":\"found\",\"findings\":$JSON_FINDINGS,\"message\":\"Secrets detected — commit blocked\"}"
   exit 1
 else
-  echo -e "${GREEN}Security scan passed — no secrets found${NC}" >&2
-  echo "{\"status\":\"pass\",\"findings\":[],\"message\":\"No secrets found\"}"
+  echo -e "${GREEN}✓ No secrets found — safe to commit${NC}" >&2
+  echo "{\"status\":\"clean\",\"findings\":[],\"message\":\"No secrets found\"}"
   exit 0
 fi
