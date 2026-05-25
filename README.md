@@ -1,3 +1,7 @@
+<img width="1693" height="929" alt="Linkedin Post-Skill" src="https://github.com/user-attachments/assets/c1d37c69-31d4-4d9d-ab25-60ad7cf146ba" />
+
+
+
 <div align="center">
 
 # Smart Git Commit
