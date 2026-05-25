@@ -17,6 +17,42 @@ Produces gold-standard Git commits: tested, atomic, well-documented, secure, and
 traceable. Follow every phase below in order. Never skip phases unless the user
 explicitly says so.
 
+## Triggers
+
+This skill auto-activates when the user says:
+- **Committing**: "commit", "git commit", "save my changes", "checkpoint", "record changes"
+- **Pushing**: "push", "push to GitHub", "upload changes"
+- **PRs**: "create a PR", "make a pull request", "open a PR", "draft PR"
+- **Releases**: "release", "ship", "version bump", "tag this", "publish"
+- **Fixes**: "hotfix", "fix this bug", "patch"
+- **General**: "save my work", "version this", "I'm done with this feature"
+
+---
+
+## Scripts & Templates Overview
+
+This skill ships with:
+```
+scripts/
+  scan-secrets.sh          — Scan staged changes for secrets before committing
+  detect-test-runner.sh    — Auto-detect and run the project's test suite
+  split-commits.sh         — Analyze diff and suggest atomic commit splitting
+  generate-changelog.sh    — Auto-generate CHANGELOG.md from git history
+
+templates/
+  CLAUDE.md.example        — Drop-in project rules template for AI agents
+  commit-types.md          — Full conventional commits reference card
+  gitmessage               — Git commit message template (.git/COMMIT_TEMPLATE)
+
+references/
+  analysis-guide.md        — How to read diffs & find commit boundaries
+  atomic-commit-patterns.md — Splitting mixed changesets with examples
+  message-examples.md      — 13 gold-standard commit messages by type
+  pr-template.md           — Rich PR body template for gh pr create
+  security-scan-rules.md   — Secret patterns, what to block, how to fix
+  release-workflow.md      — Semver, changelog gen, tagging strategy
+```
+
 ---
 
 ## Phase 0 — Read Project Rules First
@@ -57,14 +93,16 @@ Read `references/analysis-guide.md` for diff analysis patterns.
 
 ## Phase 2 — Security Scan (Never Skip)
 
-Before staging anything, scan for secrets:
+Run the automated security scanner before staging:
 
 ```bash
-# Check for common secret patterns
+bash scripts/scan-secrets.sh
+```
+
+Or for a quick manual scan:
+```bash
 git diff | grep -iE "(api_key|secret|password|token|private_key|bearer|auth)" | head -20
 git diff --name-only | xargs grep -liE "(api_key|secret|password|token)" 2>/dev/null | head -10
-
-# Check if .env or credential files are accidentally staged
 git status | grep -E "\.env|\.pem|\.key|credentials|secrets"
 ```
 
@@ -74,34 +112,36 @@ If anything suspicious is found:
 3. Inform the user
 4. Never proceed until clean
 
+Read `references/security-scan-rules.md` for the full list of secret patterns to block.
+
 ---
 
 ## Phase 3 — Run Tests (Gate the Commit)
 
-Detect and run the project's test suite:
+Run the auto-detection script to find and execute the project's test suite:
 
 ```bash
-# Auto-detect test runner
-if [ -f "package.json" ]; then
-  npm test 2>&1 | tail -20
-elif [ -f "pytest.ini" ] || [ -f "pyproject.toml" ]; then
-  pytest --tb=short 2>&1 | tail -20
-elif [ -f "Cargo.toml" ]; then
-  cargo test 2>&1 | tail -20
-elif [ -f "go.mod" ]; then
-  go test ./... 2>&1 | tail -20
-fi
+bash scripts/detect-test-runner.sh
 ```
+
+The script supports: npm, yarn, pnpm, pytest, cargo, go test, make test, rspec, mix test, gradle, maven, ctest.
 
 **If tests fail**: Fix the failures first, then commit the fix alongside the feature.
 Never commit a broken state. If the user says "commit anyway", add a `WIP:` prefix
 and create a draft PR instead of a regular commit.
+
+If no test runner is detected, ask the user if they want to proceed.
 
 ---
 
 ## Phase 4 — Split Into Atomic Commits
 
 Group changes by concern. Each commit should answer: *"What single thing does this do?"*
+
+Run the split helper to analyze and plan:
+```bash
+bash scripts/split-commits.sh
+```
 
 **Splitting strategy:**
 - `feat:` — new capability added
@@ -112,6 +152,7 @@ Group changes by concern. Each commit should answer: *"What single thing does th
 - `chore:` — config, deps, tooling
 - `perf:` — performance improvement
 - `security:` — security fix (use this explicitly, not `fix:`)
+- `hotfix:` — urgent production fix (always from main)
 
 Stage selectively:
 ```bash
@@ -121,6 +162,7 @@ git add tests/test_auth.py  # tests together with what they test
 ```
 
 Read `references/atomic-commit-patterns.md` for splitting examples.
+Read `templates/commit-types.md` for the full commit type reference card.
 
 ---
 
@@ -155,6 +197,14 @@ Co-authored-by: <if pair programmed>
 - Flag **breaking changes** explicitly
 - Reference **performance numbers** if this is a perf fix
 
+### Git Message Template
+
+Use the included template for consistent formatting:
+```bash
+# Set up the template for this repo
+git config commit.template templates/gitmessage
+```
+
 ### Example of a great commit:
 
 ```
@@ -171,7 +221,8 @@ applies to new charge attempts after deploy.
 Closes #301
 ```
 
-Read `references/message-examples.md` for 10 real examples across different types.
+Read `references/message-examples.md` for 13 real examples across all commit types.
+Read `templates/commit-types.md` for the quick-reference card.
 
 ---
 
@@ -182,6 +233,10 @@ Before committing, check if there's an open issue:
 ```bash
 # If GitHub CLI is available
 gh issue list --state open 2>/dev/null | head -20
+
+# If project uses Jira / Linear / etc.
+# Check for ticket references in branch name or recent commits
+git log --oneline -3 | grep -iE "(PROJ-\d+|#[0-9]+)" || true
 ```
 
 Ask the user: *"Is this related to any open issue or ticket?"*
@@ -191,6 +246,7 @@ Use the correct footer keyword based on intent:
 - `Fixes #N` — same as Closes, for bugs specifically
 - `Refs #N` — related but doesn't close it
 - `Part of #N` — one commit in a larger effort
+- `Jira: PROJ-123` — reference for Jira tickets (no auto-close)
 
 ---
 
@@ -247,6 +303,14 @@ The PR body should include:
 - Screenshots if UI changed
 - Checklist: tests pass, docs updated, no secrets
 
+For hotfix PRs, always target `main` directly:
+```bash
+gh pr create --base main \
+  --title "hotfix(scope): urgent description" \
+  --body "$(cat references/pr-template.md)" \
+  --label hotfix
+```
+
 ---
 
 ## Phase 10 — Release Tagging (When Applicable)
@@ -254,20 +318,22 @@ The PR body should include:
 If the user says "release", "ship", "version bump", or "tag this":
 
 ```bash
-# Read current version
+# Generate changelog and bump version automatically
+bash scripts/generate-changelog.sh
+
+# Or read current version manually
 cat package.json | grep '"version"' 2>/dev/null
 cat pyproject.toml | grep 'version' 2>/dev/null
-
-# Generate changelog from commits since last tag
-git log $(git describe --tags --abbrev=0)..HEAD --oneline
 ```
 
 Then:
 1. Bump version in the appropriate file (`package.json`, `pyproject.toml`, etc.)
-2. Update `CHANGELOG.md` with categorized changes
-3. Commit: `chore(release): bump version to v1.x.x`
+2. Run `bash scripts/generate-changelog.sh` to update CHANGELOG.md (if not run already)
+3. Commit: `release: bump version to v1.x.x`
 4. Tag: `git tag -a v1.x.x -m "Release v1.x.x"`
 5. Push with tags: `git push && git push --tags`
+
+Read `references/release-workflow.md` for full release process including hotfix releases and branching strategy.
 
 ---
 
@@ -290,12 +356,16 @@ Always show a clean summary:
 | Scenario | Action |
 |---|---|
 | Tests fail | Fix first, commit fix + feature together |
-| Secret found in diff | Remove, add to .gitignore, then commit |
-| Mixed concerns in diff | Split into multiple atomic commits |
+| Secret found in diff | Remove, add to .gitignore, run `bash scripts/scan-secrets.sh` |
+| Mixed concerns in diff | Run `bash scripts/split-commits.sh`, split into atomic commits |
 | No issue to link | Ask the user before proceeding |
 | On main branch | Create feature branch first |
-| Breaking change | Add `BREAKING CHANGE:` footer, bump major version |
+| Breaking change | Add `BREAKING CHANGE:` footer + `!` suffix, bump major version |
 | WIP / incomplete | `git commit -m "WIP: ..."` + open draft PR |
+| Hotfix needed | Branch from `main`, fix, PR to `main`, cherry-pick to `develop` |
+| Release / version | Run `bash scripts/generate-changelog.sh`, tag, push tags |
+| No test runner found | Warn user, ask if they want to proceed |
+| Project needs rules | Copy `templates/CLAUDE.md.example` to `CLAUDE.md` and customize |
 
 ---
 
@@ -303,5 +373,14 @@ Always show a clean summary:
 
 - `references/analysis-guide.md` — How to read diffs and identify commit boundaries
 - `references/atomic-commit-patterns.md` — Real examples of splitting mixed changesets
-- `references/message-examples.md` — 10 gold-standard commit message examples
+- `references/message-examples.md` — 13 gold-standard commit message examples across all types
+- `references/security-scan-rules.md` — Secret patterns, what to block, how to fix
+- `references/release-workflow.md` — Semver, changelog gen, tagging, hotfix branch strategy
 - `references/pr-template.md` — PR body template to use with `gh pr create`
+- `scripts/scan-secrets.sh` — Automated security scanner (exit code gates commits)
+- `scripts/detect-test-runner.sh` — Auto-detect and run project test suite
+- `scripts/split-commits.sh` — Analyze changes and suggest atomic commit splits
+- `scripts/generate-changelog.sh` — Auto-generate CHANGELOG.md from git history
+- `templates/CLAUDE.md.example` — Drop-in project rules template for AI agents
+- `templates/commit-types.md` — Full conventional commits reference card
+- `templates/gitmessage` — Git commit message template

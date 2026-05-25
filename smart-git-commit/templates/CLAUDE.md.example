@@ -1,0 +1,110 @@
+# Project Rules for AI Coding Agents
+
+This file defines how git commits, branches, and releases are managed in this project.
+Copy this to `CLAUDE.md` in your repo root and customize.
+
+---
+
+## Commit Message Format
+
+```
+<type>(<scope>): <imperative summary under 72 chars>
+
+<body — explain WHY, not what>
+
+<footers>
+```
+
+### Types
+| Type | Usage |
+|------|-------|
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `refactor` | Code restructure (no behavior change) |
+| `test` | Add/update tests |
+| `docs` | Documentation only |
+| `chore` | Config, deps, tooling |
+| `perf` | Performance improvement |
+| `security` | Security fix |
+| `release` | Version bump / release commit |
+
+### Project-Specific Scopes
+<!-- Replace with your project's module/package names -->
+- `api`
+- `ui`
+- `db` / `database`
+- `auth`
+- `payments`
+- `infra`
+- `cli`
+- `core`
+
+---
+
+## Branch Naming Convention
+
+| Branch Pattern | Purpose |
+|----------------|---------|
+| `main` | Production — protected, no direct commits |
+| `develop` | Integration branch |
+| `feature/<description>` | New features (branch from develop) |
+| `fix/<description>` | Bug fixes (branch from main) |
+| `hotfix/<description>` | Urgent production fixes (branch from main) |
+| `chore/<description>` | Maintenance tasks |
+| `release/v<version>` | Release preparation |
+
+---
+
+## PR Requirements
+
+- [ ] Tests pass (run: `npm test` or the project's test command)
+- [ ] No secrets or credentials in the diff
+- [ ] Linked to an open issue (Closes #N / Fixes #N)
+- [ ] No direct pushes to `main` or `develop`
+- [ ] Breaking changes have `BREAKING CHANGE:` footer
+- [ ] Docs updated if behavior changed
+
+### Test Command
+<!-- Replace with your project's test command -->
+```bash
+npm test
+```
+
+---
+
+## Release Process
+
+1. Run `bash scripts/generate-changelog.sh` to update CHANGELOG.md
+2. Bump version in package.json / pyproject.toml
+3. Commit: `release: bump version to v<version>`
+4. Tag: `git tag -a v<version> -m "Release v<version>"`
+5. Push: `git push origin main --tags`
+
+---
+
+## Project-Specific Rules
+
+<!-- Add your project's conventions here -->
+<!-- Example:
+- Never commit directly to main — always use feature branches
+- All features must include tests before merging
+- Use async/await, never raw promises
+- React components go in src/components/
+-->
+
+---
+
+## Quick Start
+
+```bash
+# Create feature branch
+git checkout -b feature/my-feature develop
+
+# After making changes
+git add <files>
+git commit -m "feat(scope): concise description"
+git push origin feature/my-feature
+
+# Create PR (if GitHub CLI is installed)
+gh pr create --draft
+```

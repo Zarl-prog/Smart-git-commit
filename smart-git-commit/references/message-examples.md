@@ -1,6 +1,6 @@
 # Gold-Standard Commit Message Examples
 
-10 real-world examples across different types. Use these as templates.
+13 real-world examples across all commit types. Use these as templates.
 
 ---
 
@@ -183,4 +183,60 @@ TODO:
 - Fallback for new users (cold start problem)
 
 Refs #254
+```
+
+---
+
+## 11. Hotfix (Urgent Production Fix)
+
+```
+hotfix(api): restore removed pagination parameter from user list
+
+Production monitoring detected 500 errors on /api/users — the
+`page` parameter was accidentally removed during refactor in
+commit a3f9c12b. Frontend was sending it unconditionally.
+
+Root cause: Refactored query parser didn't forward unknown params.
+Fix: Add passthrough for pagination params while preserving the
+new parser structure.
+
+Severity: Critical (all API clients affected)
+Time to detect: 12 minutes from deploy
+Time to fix: 4 minutes
+
+Fixes INC-8472
+```
+
+---
+
+## 12. Revert
+
+```
+revert: remove buggy cursor pagination from user list
+
+This reverts commit b7e8f90d. Cursor-based pagination introduced
+a regression where users with >100 items couldn't navigate past
+the first page due to incorrect cursor encoding.
+
+Will re-implement after fixing the encoding logic. In the meantime,
+offset-based pagination is restored with no behavior change.
+
+Fixes #312
+Refs #298
+```
+
+---
+
+## 13. Release Commit
+
+```
+release: bump version to v2.1.0
+
+See CHANGELOG.md for full list of changes.
+
+Highlights:
+- feat(api): add webhook event replay endpoint (#267)
+- feat(ui): redesigned dashboard with real-time updates (#271)
+- fix(payments): handle Stripe idempotency errors (#269)
+- perf(db): reduce query time on analytics reports (#272)
 ```
