@@ -1,1 +1,53 @@
-Prompt.txt
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment & Secrets
+.env
+.env.*
+.env.local
+.env.production
+*.pem
+*.key
+*.cert
+*.p12
+*.keystore
+credentials
+secrets
+id_rsa
+id_dsa
+
+# OS Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor & IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Build Output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test Coverage
+coverage/
+.nyc_output/
+
+# Git
+*.orig
+*.patch
+
+# Temp
+tmp/
+temp/
