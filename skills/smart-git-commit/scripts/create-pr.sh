@@ -54,6 +54,15 @@ if [ -z "$BRANCH" ]; then
   exit 1
 fi
 
+# Auto-detect base branch from branch prefix
+if echo "$BRANCH" | grep -qE "^hotfix/|^release/"; then
+  BASE_BRANCH="main"
+  echo -e "${YELLOW}Detected $BRANCH — targeting main branch.${NC}" >&2
+elif echo "$BRANCH" | grep -qE "^feature/|^feat/|^fix/|^chore/|^docs/"; then
+  BASE_BRANCH="develop"
+  echo -e "${CYAN}Detected $BRANCH — targeting develop branch.${NC}" >&2
+fi
+
 if [ "$BRANCH" = "$BASE_BRANCH" ] || [ "$BRANCH" = "develop" ]; then
   echo -e "${YELLOW}Warning: On $BRANCH branch. Feature branches are preferred.${NC}" >&2
 fi
