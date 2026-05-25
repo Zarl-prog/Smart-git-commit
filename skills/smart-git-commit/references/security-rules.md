@@ -33,14 +33,16 @@
 ## How to Scan
 
 ```bash
-# Quick scan of staged changes
-git diff --cached | grep -inE "(api_key|secret|password|token|private_key|bearer)" | head -30
+# Quick scan of staged changes (build pattern safely)
+SCAN_PATTERN="(api_key|secret|password|token|private_key|bearer|stripe|aws_key)"
+git diff --cached | grep -inE "$SCAN_PATTERN" | head -30
 
 # Check for credential files accidentally staged
 git diff --cached --name-only | grep -iE "\.env|\.pem|\.key|credentials|secrets" | head -10
 
-# Full diff scan against secret patterns
-git diff --cached | grep -inE "(ghp_|gho_)" | head -20
+# Full diff scan with expanded patterns
+SCAN_FULL="(ghp_|gho_|stripe_live|aws_secret|connection_string)"
+git diff --cached | grep -inE "$SCAN_FULL" | head -20
 ```
 
 ## What to Do When Found
