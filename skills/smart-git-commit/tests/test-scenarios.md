@@ -60,14 +60,14 @@ git add -A
 
 **Expected behavior:**
 1. Phase 2 runs `bash scripts/scan-secrets.sh`
-2. Script detects `sk_live_`, `AKIA...`, and `redis://:password@`
+2. Script detects `API_KEY` assignment, `REDIS_URL` with password, `AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY`
 3. Script exits with code 1
 4. Phase 2 stops — commit is blocked
 
 **Pass criteria:**
 - `bash scripts/scan-secrets.sh` exits with code 1
 - Output JSON includes `"status":"fail"`
-- Findings include at least: Stripe key, AWS key, Redis password
+- Findings include at least: API key, AWS access key ID, AWS secret key, Redis URL with password
 
 ---
 
