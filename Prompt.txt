@@ -1,0 +1,109 @@
+I want to build a production-grade Claude Code skill called "smart-git-commit". 
+This should be a complete, well-structured skill that developers would actually 
+want to install and use daily.
+
+Here's what I want it to do and how to structure it:
+
+## Skill Goal
+Make every Git commit as useful as possible — tested, atomic, secure, 
+well-documented, and traceable. Better than anything other coding agents produce.
+
+## Directory Structure to Build
+smart-git-commit/
+├── SKILL.md                          ← Main entry point, phases, routing
+├── references/
+│   ├── analysis-guide.md             ← How to read diffs & find commit boundaries
+│   ├── atomic-commit-patterns.md     ← Splitting mixed changesets with examples
+│   ├── message-examples.md           ← 15+ gold-standard commit messages by type
+│   ├── security-scan-rules.md        ← Secret patterns, what to block, how to fix
+│   ├── release-workflow.md           ← Semver, changelog gen, tagging strategy
+│   └── pr-template.md                ← Rich PR body template for gh pr create
+├── scripts/
+│   ├── scan-secrets.sh               ← Bash script: grep for secrets/keys/tokens
+│   ├── detect-test-runner.sh         ← Auto-detect npm/pytest/cargo/go test
+│   ├── split-commits.sh              ← Interactive helper for atomic splitting
+│   └── generate-changelog.sh         ← Auto-generate CHANGELOG.md from git log
+└── templates/
+    ├── CLAUDE.md.example             ← Drop-in CLAUDE.md template for any project
+    ├── commit-types.md               ← Full conventional commits reference card
+    └── gitmessage                    ← Git commit message template file
+
+## What Each Phase in SKILL.md Should Cover (in order)
+1. Read CLAUDE.md / project rules first (override defaults if found)
+2. Full diff analysis — categorize every changed file by concern
+3. Security scan — run scan-secrets.sh, block commit if secrets found
+4. Test gate — run detect-test-runner.sh, only commit if green
+5. Atomic split decision — detect mixed concerns, plan multiple commits
+6. Commit message construction — type, scope, subject, body (WHY), footers
+7. Issue & ticket linking — GitHub issues, Jira, Linear auto-detection
+8. Execute commits — selective staging, verify diff before each commit
+9. Push strategy — never push to main, always feature branch
+10. PR creation — use gh CLI with pr-template.md, default to draft
+11. Release tagging — semver bump, CHANGELOG.md update, git tag + push
+
+## Scripts Requirements
+
+scan-secrets.sh should:
+- Grep for: API keys, tokens, passwords, private keys, .env values, AWS keys
+- Check for accidentally staged .env, .pem, .key, credentials files
+- Output: CLEAN or list of suspicious lines with file:line references
+- Exit code 0 = clean, 1 = secrets found (blocks commit)
+
+detect-test-runner.sh should:
+- Auto-detect: package.json (npm test), pytest.ini/pyproject.toml (pytest), 
+  Cargo.toml (cargo test), go.mod (go test), Makefile (make test), 
+  .rspec (rspec), mix.exs (mix test)
+- Run the detected suite and capture pass/fail
+- Output: PASS with test count, or FAIL with failing test names
+- If no test runner found: warn user and ask if they want to proceed
+
+generate-changelog.sh should:
+- Read git log since last tag
+- Group commits by type: Features, Bug Fixes, Performance, Security, Breaking Changes
+- Format as Markdown with date and version
+- Prepend to existing CHANGELOG.md or create new one
+
+split-commits.sh should:
+- Show git diff --stat grouped by directory/concern
+- Suggest a split plan: "I see 3 concerns: auth (2 files), payments (1 file), tests (3 files)"
+- Let user confirm or modify the plan
+- Execute staged commits in the right order
+
+## CLAUDE.md.example Template Should Include
+- Commit message format rules
+- Branch naming convention (feature/, fix/, chore/, release/)
+- Which test command to run
+- PR requirements (linked issue, passing tests, no direct main pushes)
+- Any project-specific scopes for conventional commits
+- Release process instructions
+
+## message-examples.md Requirements
+Cover all these types with 1-2 examples each:
+feat, fix, perf, security, refactor, test, docs, chore, 
+breaking change, WIP/draft, hotfix, revert, release
+
+Each example should show:
+- Subject line (under 72 chars, imperative mood)
+- Body explaining WHY (not just what)
+- Decision log (alternatives considered)
+- Proper footers (Closes #N, BREAKING CHANGE, etc.)
+
+## SKILL.md Requirements
+- Under 400 lines
+- Clear phase headers with phase numbers
+- Each phase references the right script or reference file
+- Quick-reference table at the bottom for common scenarios
+- Triggers section explaining when this skill auto-activates
+- Must handle: single commit, multi-commit split, release, hotfix, WIP scenarios
+
+## Quality Bar
+- Every script should have error handling and clear output messages
+- Reference files should have real, copy-paste-ready examples
+- The skill should work for: Node.js, Python, Rust, Go, Ruby, Elixir projects
+- SKILL.md description (frontmatter) should be "pushy" so it triggers reliably
+
+After building everything:
+1. Show me the full directory tree
+2. Run a quick sanity check on all bash scripts (bash -n)
+3. Package it as smart-git-commit.skill
+4. Present the .skill file for download
