@@ -1,12 +1,15 @@
 ---
 name: smart-git-commit
 description: >
-  Use this skill whenever commits, pushes, PRs, or any git workflow is
-  involved. Triggers on: "commit", "push", "save my changes", "create a PR",
-  "ship this", "open a pull request", "make a release", "tag this version",
-  "checkpoint", or any request to record or share code changes. Produces
-  gold-standard commits: tested, atomic, secure, richly documented, and
-  traceable. Far better than default agent git behavior. Use aggressively.
+  Use this skill for ANY git operation — commits, pushes, PRs, releases,
+  or version tagging. Triggers on: "commit", "push", "save my changes",
+  "create a PR", "open a pull request", "ship this", "make a release",
+  "tag this version", "checkpoint my work", or any request to record or
+  publish code changes. Produces gold-standard commits using a unique
+  5-part format (CONTEXT/CHANGE/WHY/IMPACT) that is more useful and
+  human-readable than any other agent's default git behavior. Includes
+  secret scanning, test gating, atomic splitting, issue linking, PR
+  creation, and release tagging. Use aggressively whenever git is involved.
 ---
 
 # Smart Git Commit Skill
@@ -17,49 +20,23 @@ user explicitly says so.
 
 <!-- line-limit: 500 -->
 
-## File Structure
-
-```
-skills/smart-git-commit/
-├── SKILL.md                     ← This file
-├── scripts/                     ← Bash automation (JSON stdout)
-│   ├── scan-secrets.sh          — Security scanner (exit code gate)
-│   ├── detect-test-runner.sh    — Auto-detect & run test suite
-│   ├── split-commits.sh         — Analyze & suggest atomic splits
-│   ├── generate-changelog.sh    — Auto-generate CHANGELOG.md
-│   └── create-pr.sh             — Create draft PR with rich body
-├── references/                  ← Deep dives loaded on demand
-│   ├── commit-types.md          — Full conventional commits reference
-│   ├── atomic-patterns.md       — Splitting mixed changesets
-│   ├── message-examples.md      — 15 gold-standard commit examples
-│   ├── security-rules.md        — Secret patterns & fix guide
-│   └── release-workflow.md      — Versioning, changelog, tagging
-├── templates/                   ← Drop-in config files
-│   ├── CLAUDE.md.example        — Project rules for AI agents
-│   ├── .gitmessage              — Git commit message template
-│   └── pr-body.md               — Rich PR body template
-└── tests/                       ← Test scenarios & fixtures
-    ├── README.md                — How to run tests
-    ├── fixtures/                — Sample diffs for testing
-    └── test-scenarios.md        — 7 written test cases
-```
-
 ---
 
 ## Phase 0 — Read Project Rules
 
-Check for project-specific rules that override defaults:
+Check for CLAUDE.md, .gitmessage, .git/COMMIT_TEMPLATE at repo root.
+If found, those rules override this skill's defaults.
 
 ```bash
 cat CLAUDE.md 2>/dev/null && echo "→ Found CLAUDE.md"
 cat .gitmessage 2>/dev/null && echo "→ Found .gitmessage"
 ```
 
-If found, merge those rules with the steps below. **Project rules take priority.**
+Show what rules were loaded before proceeding.
 
 ---
 
-## Phase 1 — Full Diff Analysis
+## Phase 1 — Diff Analysis
 
 Run full diff analysis before touching `git add`:
 
@@ -70,11 +47,18 @@ git diff                 # full diff for small changesets
 git log --oneline -5     # recent commit context
 ```
 
-Ask yourself:
-- Do changes span **multiple concerns**? → split (Phase 4)
-- Are **test files** present for the changed code?
-- Is there an **open issue or ticket**? (Phase 6)
-- Is this a **breaking change**? → add `BREAKING CHANGE:` footer
+Categorize every changed file:
+
+| Path pattern | Category |
+|-------------|----------|
+| `src/` `lib/` `app/` | feature/fix/refactor |
+| `tests/` `*.test.*` | test |
+| `docs/` `*.md` | docs |
+| `package.json` deps | chore |
+| `.github/` `Makefile` | tooling |
+
+If files span more than one category → flag for atomic split in Phase 4.
+Read `references/atomic-patterns.md` if split is needed.
 
 ---
 
@@ -86,10 +70,10 @@ Run the automated security scanner:
 bash scripts/scan-secrets.sh
 ```
 
-- **Exit 0** → clean, proceed
-- **Exit 1** → secrets found, **block commit** immediately
+- **Exit 0** → show "✓ Clean" and continue
+- **Exit 1** → **HARD STOP**. Show findings. Do not proceed until clean.
 
-If secrets are found:
+If secrets found:
 1. `git reset HEAD <file>` to unstage
 2. Replace with env var or placeholder
 3. Add to `.gitignore` if needed
@@ -99,7 +83,7 @@ Read `references/security-rules.md` for the full pattern list.
 
 ---
 
-## Phase 3 — Test Gate
+## Phase 3 — Test Gate (Never Skip)
 
 Auto-detect and run the project's test suite:
 
@@ -107,36 +91,27 @@ Auto-detect and run the project's test suite:
 bash scripts/detect-test-runner.sh
 ```
 
-- **Tests pass** → proceed
-- **Tests fail** → fix first, or use `WIP:` prefix for draft PR
-- **No runner found** → warn user, ask to proceed
+- **status = "pass"** → show test count and continue
+- **status = "fail"** → **HARD STOP**. Fix failures first, then commit fix + feature together.
+- **status = "not_found"** → warn user, ask if they want to proceed anyway
 
-Supported runners: npm test, jest, vitest, pytest, cargo test, go test,
-make test, rspec, mix test, gradle, maven, ctest.
+Supported runners: npm test, pytest, cargo test, go test, make test,
+rspec, mix test, gradle, ctest.
 
 ---
 
 ## Phase 4 — Atomic Split Decision
 
-Run the split analyzer to detect mixed concerns:
+If Phase 1 found multiple concerns:
 
 ```bash
 bash scripts/split-commits.sh
 ```
 
-Group changes by concern. Each commit answers: *"What single thing does this do?"*
+Show the proposed split plan. Execute each commit group in sequence
+(Phases 5-7 repeat per group).
 
-| Type | Concern | Example |
-|------|---------|---------|
-| `feat:` | New feature | `git add src/auth/` |
-| `fix:` | Bug fix | `git add src/payments/` |
-| `refactor:` | Restructure | `git add src/lib/` |
-| `test:` | Tests only | `git add tests/` |
-| `docs:` | Documentation | `git add docs/` |
-| `chore:` | Config/deps | `git add package.json` |
-| `hotfix:` | Urgent fix | `git add src/api/` |
-
-Stage selectively — never `git add .` for mixed changesets.
+If single concern: proceed directly to Phase 5.
 
 Read `references/atomic-patterns.md` for splitting strategies.
 
@@ -144,33 +119,34 @@ Read `references/atomic-patterns.md` for splitting strategies.
 
 ## Phase 5 — Commit Message Construction
 
-This is the **core of this skill**. Every commit uses this 5-part format:
+Use the **5-part format** for every commit. No exceptions.
 
 ```
 <type>(<scope>): <imperative summary — max 72 chars>
 
-CONTEXT: <what state the code was in BEFORE this change>
-CHANGE:  <exactly what was done>
-WHY:     <the reason — business or technical motivation>
-IMPACT:  <what this enables or unblocks>
+CONTEXT: <what state existed BEFORE this change — past tense>
+CHANGE:  <exactly what was done — present tense, specific>
+WHY:     <business or technical reason — not obvious from the code>
+IMPACT:  <what this enables/unblocks, or "No breaking changes">
 
-<footers: Closes #N | BREAKING CHANGE: ...>
+<footers>
 ```
 
-### Rules for Each Field
+### Summary line rules
 
-| Field | Rule | Good | Bad |
-|-------|------|------|-----|
-| **CONTEXT** | Past tense, describes the gap | "Auth tokens had no expiry" | "There was a bug" |
-| **CHANGE** | Present tense, specific | "Adds 15-min sliding expiry with refresh rotation" | "Fixed the token thing" |
-| **WHY** | Not obvious from code | "Required for SOC2 compliance" | "To improve security" |
-| **IMPACT** | Downstream effect | "Enables audit logging of token refresh events" | "Things are better now" |
-
-### Summary line rules:
 - **Imperative mood**: "add" not "added", "fix" not "fixing"
 - **No period** at end
 - **Under 72 characters**
-- **Scope** = module: `auth`, `api`, `payments`, `db`, `ui`, `cli`, `core`
+- **Types**: `feat` `fix` `perf` `security` `refactor` `test` `docs` `chore` `hotfix` `revert` `release`
+
+### Field rules
+
+| Field | Rule | Good | Bad |
+|-------|------|------|-----|
+| CONTEXT | Past tense, describes the gap | "Auth tokens had no expiry" | "There was a bug" |
+| CHANGE | Present tense, specific | "Adds 15-min sliding expiry with refresh rotation" | "Fixed the token thing" |
+| WHY | Not obvious from code | "Required for SOC2 compliance" | "To improve security" |
+| IMPACT | Downstream effect | "Enables audit logging of token refresh events" | "Things are better now" |
 
 ### Example
 
@@ -182,162 +158,119 @@ CONTEXT: Stripe delivered webhooks twice under high load due to 30s
 CHANGE:  Adds idempotency_key (order_id + unix_ts hash) to all Stripe
          charge requests.
 WHY:     Stripe's API natively deduplicates on idempotency keys — simpler
-         than Redis-based deduplication. Only new charge attempts affected.
+         than Redis-based deduplication.
 IMPACT:  Eliminates billing support tickets for duplicate charges.
 
 Closes #301
 ```
 
-Use the included git template for consistent formatting:
-```bash
-git config commit.template templates/.gitmessage
-```
-
 Read `references/message-examples.md` for 15 full examples.
-Read `references/commit-types.md` for the quick-reference card.
 
 ---
 
-## Phase 6 — Issue & Ticket Linking
+## Phase 6 — Issue and Ticket Linking
 
-Check for related issues before committing:
+Auto-detect from branch name:
 
 ```bash
-# GitHub issues
-gh issue list --state open 2>/dev/null | head -10
-
-# Auto-detect from branch name
-git branch --show-current | grep -oE '#[0-9]+|[A-Z]+-[0-9]+'
+git branch --show-current | grep -oE '[0-9]+'
 ```
 
-Ask the user: *"Is this related to any open issue or ticket?"*
+Check for open issues:
+
+```bash
+gh issue list --state open 2>/dev/null | head -20
+```
 
 Use the correct footer keyword:
 
 | Footer | Intent |
 |--------|--------|
 | `Closes #N` | Fully resolves (auto-closes on merge) |
-| `Fixes #N` | Bug-specific auto-close |
-| `Refs #N` | Related but doesn't close |
-| `Part of #N` | One commit in larger effort |
-| `Jira: PROJ-123` | Jira reference (no auto-close) |
-| `Linear: PROJ-123` | Linear reference |
+| `Fixes #N` | Bug fix (same as Closes) |
+| `Refs #N` | Related but does not close |
+| `Part of #N` | One commit in a larger effort |
+
+If no issue found, ask user before proceeding.
 
 ---
 
 ## Phase 7 — Execute Commits
 
-```bash
-git add <carefully selected files>
-git dif   --cached --stat   # final verification
-git commit
-```
+Stage selectively — never `git add .` blindly:
 
-After committing, show the result:
 ```bash
-git show --stat HEAD
-```
-
-Always output a clean summary:
-```
-✅ Committed: fix(auth): resolve token expiry race condition
-📁 Files: 3 changed, 47 insertions, 12 deletions
-🔗 Closes: #188
-🌿 Branch: feature/auth-improvements
+git add <specific files or directories>
+git diff --cached --stat   # verify before committing
+git commit -m "<subject>" \
+  -m "CONTEXT: ...
+CHANGE:  ...
+WHY:     ...
+IMPACT:  ..." \
+  -m "<footers>"
+git show --stat HEAD       # confirm after
 ```
 
 ---
 
 ## Phase 8 — Push Strategy
 
-**Never push directly to `main` or `develop`** unless trunk-based dev is confirmed.
+Never push directly to `main` or `develop`. Always push to feature branch:
 
 ```bash
-# Push to feature branch
 git push origin HEAD
-
-# If branch not on remote yet
-git push --set-upstream origin $(git branch --show-current)
+git push --set-upstream origin <branch>   # if new branch
 ```
 
-For multi-commit branches, review before push:
+Show commits being pushed:
+
 ```bash
 git log --oneline origin/main..HEAD
 ```
-
-Exception: **hotfix** branches may push to main after user confirms.
 
 ---
 
 ## Phase 9 — PR Creation
 
-If GitHub CLI is available and this is a feature branch:
+If on a feature branch after push:
 
 ```bash
-bash scripts/create-pr.sh    # creates draft PR
+bash scripts/create-pr.sh
 ```
 
-Options:
-- `--no-draft` — create as ready PR instead of draft
-- `--base develop` — target develop branch
-
-The script:
-1. Reads branch name and recent commits
-2. Builds PR title from most significant commit subject
-3. Fills body from `templates/pr-body.md` with commit contexts
-4. Creates as draft by default
-
-For hotfix PRs, always target `main` directly.
+- Always creates as **draft** — user promotes when ready
+- Show PR URL after creation
 
 ---
 
 ## Phase 10 — Release Tagging
 
-If the user says "release", "ship", "version bump", or "tag this":
+Triggers on: "release", "ship", "version bump", "tag this"
 
 ```bash
-# Generate changelog and bump version automatically
 bash scripts/generate-changelog.sh
 ```
 
 Then:
 1. Read current version from `package.json`, `pyproject.toml`, `Cargo.toml`
-2. Run `bash scripts/generate-changelog.sh` to update CHANGELOG.md
-3. Bump version in the appropriate file
-4. Commit: `release: bump version to v1.x.x` (with 5-part format)
-5. Tag: `git tag -a v1.x.x -m "Release v1.x.x"`
-6. Push: `git push && git push --tags`
+2. Bump version in the appropriate file
+3. Commit: `chore(release): bump version to vX.Y.Z` (with 5-part format)
+4. Tag: `git tag -a vX.Y.Z -m "Release vX.Y.Z"`
+5. Push: `git push && git push --tags`
 
-Read `references/release-workflow.md` for full release process.
+Read `references/release-workflow.md` for full semver guide.
 
 ---
 
 ## Quick Reference
 
-| Scenario | Action |
-|---|---|
-| Tests fail | Fix first, commit fix + feature together, or use WIP |
-| Secret in diff | Unstage, remove, add to .gitignore, rotate if pushed |
-| Mixed concerns | `bash scripts/split-commits.sh`, split into atomic commits |
-| No issue to link | Ask user before proceeding |
-| On main branch | Create feature branch first |
-| Breaking change | Add `BREAKING CHANGE:` footer + `!` suffix, bump major |
-| WIP / incomplete | `WIP: <type>(<scope>): <summary>` + draft PR |
-| Hotfix needed | Branch from `main`, fix, PR to `main`, cherry-pick to develop |
-| Release / version | `bash scripts/generate-changelog.sh`, tag, push tags |
-| No test runner | Warn user, ask if they want to proceed |
-| Start using skill | Copy `templates/CLAUDE.md.example` → `CLAUDE.md`, customize |
-
----
-
-## References
-
-- `references/commit-types.md` — Full conventional commits reference card
-- `references/atomic-patterns.md` — Real examples of splitting changesets
-- `references/message-examples.md` — 15 examples of the 5-part format
-- `references/security-rules.md` — Secret patterns, what to block, how to fix
-- `references/release-workflow.md` — Semver, changelog, tagging strategy
-- `references/pr-template.md` — PR body template (legacy)
-- `templates/.gitmessage` — Set as `git config commit.template`
-- `templates/CLAUDE.md.example` — Drop-in project rules for AI agents
-- `tests/test-scenarios.md` — 7 test cases for this skill
+| Scenario | Start at Phase |
+|----------|---------------|
+| Single clean commit | Phase 1 |
+| Secret found | Phase 2 → fix first |
+| Tests failing | Phase 3 → fix first |
+| Mixed concerns in diff | Phase 4 |
+| Already staged, need msg | Phase 5 |
+| Need to push + open PR | Phase 8 |
+| Release / version bump | Phase 10 |
+| Hotfix on main | Phase 0 → check rules |
