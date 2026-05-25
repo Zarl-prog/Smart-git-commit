@@ -21,27 +21,27 @@ SUSPICIOUS_FOUND=0
 
 # Patterns to scan in diff content
 HIGH_PRIORITY_PATTERNS=(
-  "api[_-]?key"
-  "secret"
-  "password"
-  "token"
+  "api[_-]?key[[:space:]]*=[[:space:]]*['\"]?[A-Za-z0-9_-]{10,}"  # API key assignments
+  "secret[_-]?key[[:space:]]*=[[:space:]]*['\"][A-Za-z0-9_-]{10,}" # Secret key assignments
+  "secret[[:space:]]*=[[:space:]]*['\"][A-Za-z0-9_-]{10,}"        # Secret assignments
+  "password[[:space:]]*=[[:space:]]*['\"][A-Za-z0-9!@#$%^&*()_+-=]{6,}"  # Password assignments
   "private[_-]?key"
-  "bearer"
-  "auth"
+  "BEGIN[[:space:]]+(RSA|DSA|EC|OPENSSH|PGP)[[:space:]]+PRIVATE[[:space:]]+KEY"
+  "bearer[[:space:]]+[A-Za-z0-9._-]{20,}"  # Bearer tokens (long strings only)
   "AKIA[0-9A-Z]{16}"        # AWS Access Key
   "sk_live_"                  # Stripe live secret key
   "pk_live_"                  # Stripe live publishable key
   "ghp_"                      # GitHub personal access token
   "gho_"                      # GitHub OAuth token
   "ghu_"                      # GitHub user token
-  "DATABASE_URL"
-  "CONNECTION_STRING"
-  "REDIS_URL"
-  "MONGODB_URI"
-  "postgresql://"
-  "mysql://"
-  "mongodb://"
-  "redis://"
+  "DATABASE_URL[[:space:]]*="
+  "CONNECTION_STRING[[:space:]]*="
+  "REDIS_URL[[:space:]]*="
+  "MONGODB_URI[[:space:]]*="
+  "postgresql://[^:]+:[^@]+@"  # postgres://user:pass@
+  "mysql://[^:]+:[^@]+@"      # mysql://user:pass@
+  "mongodb://[^:]+:[^@]+@"    # mongodb://user:pass@
+  "redis://:[^@]+@"           # redis://:pass@
 )
 
 # File patterns that should never be staged
