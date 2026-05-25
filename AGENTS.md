@@ -1,83 +1,64 @@
-# Agent Skills — Smart Git Commit
+# Smart Git Commit — Agent Skills Manifest
 
-This document defines the machine-readable manifest for the `smart-git-commit` skill.
-It follows the [vercel-labs/agent-skills](https://github.com/vercel-labs/agent-skills) convention.
-
-## Directory Structure
+## Skill Directory Structure
 
 ```
 skills/
-  smart-git-commit/       # kebab-case directory — required
-    SKILL.md              # Skill definition — required
-    scripts/              # Bash/Node automation scripts
-      scan-secrets.sh
-      detect-test-runner.sh
-      split-commits.sh
-      generate-changelog.sh
-      create-pr.sh
-    references/           # Supporting docs loaded on demand
-      commit-types.md
-      atomic-patterns.md
-      message-examples.md
-      security-rules.md
-      release-workflow.md
-    templates/            # Drop-in config files
-      CLAUDE.md.example
-      .gitmessage
-      pr-body.md
-    tests/                # Test cases for the skill
-      README.md
-      fixtures/
-        mixed-diff.txt
-        secret-diff.txt
-      test-scenarios.md
+  smart-git-commit/       # kebab-case directory name
+    SKILL.md              # Required: skill definition and phases
+    scripts/              # Executable bash scripts
+    references/           # Supporting docs, loaded on demand
+    templates/            # Drop-in config files for projects
+    tests/                # Test fixtures and scenarios
 ```
 
 ## Naming Conventions
 
-- **Skill directory**: kebab-case (`smart-git-commit/`)
-- **Scripts**: kebab-case with `.sh` extension (`scan-secrets.sh`)
-- **References**: kebab-case with `.md` extension (`commit-types.md`)
+- **Skill directories**: kebab-case
+- **SKILL.md**: always uppercase, always this exact filename
+- **Scripts**: kebab-case.sh (bash) or kebab-case.mjs (Node)
+- **References**: kebab-case.md
 - **Templates**: dotfiles and `.example` suffixes (`.gitmessage`, `CLAUDE.md.example`)
 
 ## Script Requirements
 
-All scripts in `scripts/` must:
-
-1. **Shebang**: `#!/usr/bin/env bash`
-2. **Error handling**: `set -euo pipefail` for strict mode
-3. **Logging**: Progress and status messages go to **stderr**
-4. **Output**: Machine-readable results go to **stdout** as **JSON**
-5. **Exit codes**: `0` = success, `1` = failure/block
-6. **Color**: Use ANSI color codes for human-readable output (RED for errors, GREEN for success, YELLOW for warnings)
-7. **Dependencies**: Check for required tools first, provide clear error messages if missing
+- **Shebang**: `#!/usr/bin/env bash`
+- **Error handling**: `set -euo pipefail` for strict mode
+- **Progress/logs** → stderr
+- **Machine-readable results** → stdout as JSON
+- **Cleanup traps** for temp files
+- **Exit 0** = success, **exit 1** = failure (blocks caller)
+- **Color**: Use ANSI color codes (RED for errors, GREEN for success, YELLOW for warnings)
 
 ### Output JSON Schema
 
-All scripts must output JSON to stdout when called with `--json` flag (or by default):
+All scripts output JSON to stdout:
 
 ```json
 {
   "status": "pass" | "fail" | "not_found",
-  "findings": [],
+  "findings": [
+    {
+      "file": "path/to/file.ext",
+      "line": 42,
+      "pattern": "matched pattern description"
+    }
+  ],
   "message": "Human-readable summary"
 }
 ```
 
-## SKILL.md Requirements
+## SKILL.md Rules
 
-- **Line limit**: 500 lines maximum
-- **Frontmatter**: YAML frontmatter with `name` and `description` fields
-- **Progressive disclosure**: Start with summary, provide depth via reference links
-- **Phase structure**: Numbered phases (Phase 0 through Phase 10+)
-- **Script/template references**: Each phase that uses a script or template must reference it
+- Under 500 lines
+- YAML frontmatter with name + description (description must be "pushy")
+- Progressive disclosure: SKILL.md is entry point, details in references/
+- Phases numbered, each references the right script or reference file
 
 ## Progressive Disclosure Pattern
 
-The skill follows a progressive disclosure model:
-
-1. **Top-level SKILL.md**: Complete workflow with phase-by-phase instructions
-2. **References/**: Deep dives loaded on demand for specific topics
-3. **Scripts/**: Automation for repetitive tasks, called from phases
-4. **Templates/**: Drop-in config files users can customize
-5. **Tests/**: Test scenarios and fixtures for validating the skill itself
+1. **Level 1 — Frontmatter** (always in context, ~100 words)
+2. **Level 2 — SKILL.md body** (in context when skill triggers, <500 lines)
+3. **Level 3 — references/** (loaded on demand, unlimited depth)
+4. **Level 4 — scripts/** (executed, only output enters context)
+5. **Level 5 — templates/** (drop-in configs, user copies and customizes)
