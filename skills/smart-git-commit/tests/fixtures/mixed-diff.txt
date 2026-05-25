@@ -1,62 +1,153 @@
-This is a simulated git diff containing 3 mixed concerns:
-1. A feature change (src/invoice/generator.py)
-2. A bug fix (src/auth/session.py)
-3. A documentation update (README.md)
-
-When run through split-commits.sh, this should be split into 3 atomic commits.
-
---- a/src/invoice/generator.py
-+++ b/src/invoice/generator.py
-@@ -1,5 +1,17 @@
- from reportlab.lib.pagesizes import letter
- from reportlab.pdfgen import canvas
-+from reportlab.lib.colors import HexColor
-+from decimal import Decimal
+diff --git a/src/auth/jwt.py b/src/auth/jwt.py
+index e69de29..8b13789 100644
+--- a/src/auth/jwt.py
++++ b/src/auth/jwt.py
+@@ -0,0 +1,42 @@
++import time
++import jwt
 +from typing import Optional
-
- def generate_invoice(order):
-+    """
-+    Generate a PDF invoice for the given order.
-+    Supports multi-currency with automatic conversion.
-+    """
-+    convert_to = order.get('currency', 'USD')
-+    # Convert all line items to the target currency
-+    for item in order['items']:
-+        item['price'] = convert_currency(item['price'], item.get('currency', 'USD'), convert_to)
 +
-     c = canvas.Canvas(f"invoice_{order['id']}.pdf", pagesize=letter)
-     c.drawString(100, 750, f"Invoice #{order['id']}")
-
---- a/src/auth/session.py
-+++ b/src/auth/session.py
-@@ -42,7 +42,7 @@ class SessionManager:
-         session = self.sessions.get(session_id)
-         if not session:
-             return None
--        if session.expires_at < datetime.utcnow():
-+        if session.expires_at <= datetime.utcnow():
-             del self.sessions[session_id]
-             return None
-         return session
-@@ -55,6 +55,7 @@ class SessionManager:
-     def refresh_session(self, session_id: str) -> Optional[Session]:
-         session = self.sessions.get(session_id)
-         if session and session.expires_at > datetime.utcnow():
-+            session.expires_at = datetime.utcnow() + timedelta(minutes=30)
-             return session
-         return None
-
---- a a/README.md
-+++ b/README.md
-@@ -10,3 +10,7 @@ An e-commerce platform built with Flask.
-
- ## Getting Started
-
- 1. Clone the repo
- 2. Run `pip install -r requirements.txt`
- 3. Set up environment variables (see .env.example)
-+4. Run database migrations: `flask db upgrade`
++TOKEN_EXPIRY_SECONDS = 900  # 15 minutes
 +
-+## API Documentation
 +
-+See `docs/api.md` for endpoint reference and authentication details.
++def create_token(user_id: str, session_data: dict) -> str:
++    """Create a JWT token with sliding expiry."""
++    now = int(time.time())
++    payload = {
++        "sub": user_id,
++        "iat": now,
++        "exp": now + TOKEN_EXPIRY_SECONDS,
++        "data": session_data,
++        "token_type": "access",
++    }
++    secret = get_secret_key()
++    return jwt.encode(payload, secret, algorithm="HS256")
++
++
++def verify_token(token: str) -> Optional[dict]:
++    """Verify and decode a JWT token. Returns None if invalid/expired."""
++    try:
++        secret = get_secret_key()
++        payload = jwt.decode(token, secret, algorithms=["HS256"])
++        return payload
++    except jwt.ExpiredSignatureError:
++        return None
++    except jwt.InvalidTokenError:
++        return None
++
++
++def get_secret_key() -> str:
++    """Retrieve the JWT signing key from environment."""
++    import os
++    key = os.environ.get("JWT_SECRET")
++    if not key:
++        raise RuntimeError("JWT_SECRET environment variable not set")
++    if len(key) < 32:
++        raise RuntimeError("JWT_SECRET must be at least 32 characters")
++    return key
+diff --git a/tests/test_jwt.py b/tests/test_jwt.py
+index e69de29..8b13789 100644
+--- a/tests/test_jwt.py
++++ b/tests/test_jwt.py
+@@ -0,0 +1,38 @@
++import time
++import pytest
++from src.auth.jwt import create_token, verify_token
++
++
++def test_create_and_verify_token():
++    """Should create a valid token and verify it successfully."""
++    token = create_token("user_123", {"role": "admin"})
++    payload = verify_token(token)
++    assert payload is not None
++    assert payload["sub"] == "user_123"
++
++
++def test_expired_token_returns_none():
++    """Should return None for an expired token."""
++    token = create_token("user_456", {"role": "user"})
++    # Fast-forward expiry by sleeping
++    time.sleep(TOKEN_EXPIRY_SECONDS + 1)
++    payload = verify_token(token)
++    assert payload is None
++
++
++def test_invalid_token_returns_none():
++    """Should return None for a tampered token."""
++    payload = verify_token("invalid.token.here")
++    assert payload is None
++
++
++def test_missing_jwt_secret_raises_error():
++    """Should raise RuntimeError when JWT_SECRET is not set."""
++    import os
++    saved = os.environ.pop("JWT_SECRET", None)
++    with pytest.raises(RuntimeError, match="JWT_SECRET environment variable not set"):
++        create_token("test", {})
++    if saved:
++        os.environ["JWT_SECRET"] = saved
+diff --git a/src/payments/stripe.py b/src/payments/stripe.py
+index e69de29..8b13789 100644
+--- a/src/payments/stripe.py
++++ b/src/payments/stripe.py
+@@ -0,0 +1,56 @@
++import hashlib
++import hmac
++import time
++from typing import Optional
++
++import stripe
++
++
++def create_charge(
++    amount_cents: int,
++    currency: str,
++    source: str,
++    order_id: str,
++) -> dict:
++    """Create a Stripe charge with idempotency protection."""
++    idempotency_key = hashlib.sha256(
++        f"{order_id}:{int(time.time() / 60)}".encode()
++    ).hexdigest()
++
++    try:
++        charge = stripe.Charge.create(
++            amount=amount_cents,
++            currency=currency,
++            source=source,
++            idempotency_key=idempotency_key,
++        )
++        return {
++            "id": charge.id,
++            "status": charge.status,
++            "amount": charge.amount,
++            "created": charge.created,
++        }
++    except stripe.error.StripeError as e:
++        return {"error": str(e), "code": e.code}
++
++
++def verify_webhook_signature(
++    payload: bytes,
++    sig_header: str,
++    webhook_secret: str,
++) -> bool:
++    """Verify that a webhook was sent by Stripe."""
++    try:
++        event = stripe.Webhook.construct_event(
++            payload, sig_header, webhook_secret
++        )
++        return event.type
++    except ValueError:
++        return None
++    except stripe.error.SignatureVerificationError:
++        return None
+diff --git a/requirements.txt b/requirements.txt
+index e69de29..8b13789 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -1,3 +1,4 @@
+ flask==2.3.0
+ requests==2.31.0
+ stripe==5.4.0
++pyjwt==2.8.0
