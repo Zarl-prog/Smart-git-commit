@@ -1,0 +1,17 @@
+{
+  "name": "smart-git-commit",
+  "version": "1.0.0",
+  "description": "Gold-standard Git commits — tested, atomic, secure, and richly documented with a 5-part format",
+  "keywords": ["git", "commit", "conventional-commits", "agent-skills", "claude-code", "cursor"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Zarl-prog/Smart-git-commit.git"
+  },
+  "skills": {
+    "smart-git-commit": {
+      "path": "skills/smart-git-commit/SKILL.md",
+      "description": "Produces gold-standard commits: tested, atomic, secure, documented, and traceable"
+    }
+  }
+}
