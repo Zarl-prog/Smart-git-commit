@@ -20,6 +20,7 @@ echo "" >&2
 
 COMMENTS=()
 COMMENTS_ADDRESSED=0
+PASTED_LINES=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Try to get review comments via gh CLI
@@ -59,7 +60,11 @@ echo "" >&2
 PASTED_COMMENTS=""
 while IFS= read -r line; do
   PASTED_COMMENTS+="$line"$'\n'
+  if [ -n "$(echo "$line" | tr -d '[:space:]')" ]; then
+    PASTED_LINES=$((PASTED_LINES + 1))
+  fi
 done
+COMMENTS_ADDRESSED=$PASTED_LINES
 
 if [ -n "$(echo "$PASTED_COMMENTS" | tr -d '[:space:]')" ]; then
   echo "" >&2
