@@ -249,7 +249,9 @@ Just say:
 "open a PR for this change"
 "help me respond to this review comment"
 
-## License
+---
+
+## Requirements
 
 | Requirement | Version | Notes |
 |------------|---------|-------|
