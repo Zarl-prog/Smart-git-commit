@@ -228,7 +228,28 @@ Now `git commit` (without `-m`) opens your editor with the structure pre-filled.
 
 ---
 
-## Requirements
+## For Contributors
+
+Using this skill as a contributor to any open source repo:
+
+### What it does for you
+- ✅ Checks your fork is synced with upstream before anything
+- ✅ Enforces correct branch naming (feat/234-add-oauth-login)
+- ✅ Runs the repo's test suite before letting you submit
+- ✅ Scans your diff for secrets
+- ✅ Builds a professional PR body automatically from your commits
+- ✅ Helps you respond to review comments correctly
+
+### Contributor install
+npx skills add Zarl-prog/Smart-git-commit
+
+### Usage
+Just say:
+"prepare my contribution"
+"open a PR for this change"
+"help me respond to this review comment"
+
+## License
 
 | Requirement | Version | Notes |
 |------------|---------|-------|
