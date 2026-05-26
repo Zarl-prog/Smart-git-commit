@@ -334,3 +334,16 @@ MIT © 2026 [Zarl-prog](https://github.com/Zarl-prog)
 **If this saved you from a bad commit, give it a ⭐**
 
 </div>
+<div align="center">
+
+<a href="https://github.com/Zarl-prog">
+  <img src="https://github.com/Zarl-prog.png" width="80" style="border-radius:50%"/>
+</a>
+
+**Built by [Zarl-prog](https://github.com/Zarl-prog)**
+
+If this skill helped you — consider starring the repo ⭐
+
+[![GitHub followers](https://img.shields.io/github/followers/Zarl-prog?style=social)](https://github.com/Zarl-prog)
+
+</div>
