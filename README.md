@@ -329,13 +329,6 @@ Issues and PRs welcome. If you add a new secret pattern to `scan-secrets.sh`, ad
 
 <div align="center">
 
-MIT © 2026 [Zarl-prog](https://github.com/Zarl-prog)
-
-**If this saved you from a bad commit, give it a ⭐**
-
-</div>
-<div align="center">
-
 <a href="https://github.com/Zarl-prog">
   <img src="https://github.com/Zarl-prog.png" width="80" style="border-radius:50%"/>
 </a>
